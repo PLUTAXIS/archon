@@ -1,0 +1,7 @@
+[
+    {
+        "sheet": "Main",
+        "cell_reference": "C1",
+        "formula": "=A1*B1"
+    }
+]
