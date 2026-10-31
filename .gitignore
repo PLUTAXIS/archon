@@ -2,3 +2,13 @@ dag_graph.json
 __pycache__/
 .venv/
 .vscode/
+# Ignore Local Ingestion Data & Test Files
+Dropzone/
+Archive_Processed/
+For_Mainak/
+For_Senpai/
+*.xlsx
+*.xlsm
+*.accdb
+*.json
+*.txt

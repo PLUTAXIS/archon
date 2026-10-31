@@ -12,19 +12,22 @@ def is_password_protected(file_path):
         with open(file_path, "rb") as f:
             office_file = msoffcrypto.OfficeFile(f)
             if office_file.is_encrypted():
-                print(f"\n[!] CRITICAL EXCEPTION: The file '{os.path.basename(file_path)}' is PASSWORD PROTECTED.")
-                print("[!] Flagging separately for the client. Skipping internal extraction.")
+                print(f"\n[!] CRITICAL: The file '{os.path.basename(file_path)}' is PASSWORD PROTECTED.")
                 return True
-    except Exception:
-        pass
+    except msoffcrypto.exceptions.InvalidFileException:
+        print(f"[-] WARNING: '{os.path.basename(file_path)}' is malformed or not a valid Office file.")
+        raise ValueError("Malformed or unsupported file format.")
+    except Exception as e:
+        print(f"[-] ERROR checking protection for '{os.path.basename(file_path)}': {str(e)}")
+        raise
+
     return False
 
 def analyze_workbook_structure(file_path):
-    print(f"[*] Processing file: {file_path}")
-    if not os.path.exists(file_path):
-        print("[!] Error: File not found.")
-        return None
-
+    print(f"[*] Analyzing structure: {os.path.basename(file_path)}")
+    base_name = os.path.basename(file_path)
+    output_file = f"extracted_data_{base_name}.json"
+    
     try:
         with zipfile.ZipFile(file_path, 'r') as archive:
             workbook_xml = archive.read('xl/workbook.xml')
@@ -32,30 +35,31 @@ def analyze_workbook_structure(file_path):
             ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
             
             extracted_sheets = []
-            print("\n--- Sheet Geometry Extraction ---")
             for sheet in root.findall('.//main:sheet', ns):
                 sheet_name = sheet.attrib.get('name')
                 sheet_id = sheet.attrib.get('sheetId')
                 state = sheet.attrib.get('state', 'visible') 
                 
                 extracted_sheets.append({"name": sheet_name, "id": sheet_id, "state": state})
-                
                 if state in ['hidden', 'veryHidden']:
-                    print(f"[!] EXCEPTION FLAGGED: Found {state} sheet -> '{sheet_name}'")
-                else:
-                    print(f"[+] Found visible sheet: '{sheet_name}'")
+                    print(f"[!] EXCEPTION: Found {state} sheet -> '{sheet_name}'")
                     
-            with open("extracted_data.json", "w") as json_file:
+            with open(output_file, "w") as json_file:
                 json.dump(extracted_sheets, json_file, indent=4)
-            print("[+] Sheet geometry saved to extracted_data.json")
-            return extracted_sheets
+            return [output_file]
             
     except zipfile.BadZipFile:
-        print("[-] EXCEPTION FLAGGED: File is not a valid zip archive.")
-        return None
+        print("[-] EXCEPTION: File is not a valid zip archive (Malformed workbook).")
+        raise ValueError("Malformed workbook.")
+    except Exception as e:
+        print(f"[-] EXCEPTION during structure analysis: {str(e)}")
+        raise
 
 def extract_formulas(file_path):
-    print(f"\n--- Formula Extraction ---")
+    print(f"[*] Extracting formulas: {os.path.basename(file_path)}")
+    base_name = os.path.basename(file_path)
+    output_file = f"extracted_formulas_{base_name}.json"
+    
     try:
         wb = openpyxl.load_workbook(file_path, data_only=False)
         all_formulas = []
@@ -70,51 +74,47 @@ def extract_formulas(file_path):
                             "formula": cell.value
                         })
         
-        with open("extracted_formulas.json", "w") as json_file:
+        with open(output_file, "w") as json_file:
             json.dump(all_formulas, json_file, indent=4)
-        print("[+] All formulas saved to extracted_formulas.json")
-        return all_formulas
+        return [output_file]
     except Exception as e:
-        print(f"[-] EXCEPTION FLAGGED during formula extraction: {str(e)}")
-        return None
+        print(f"[-] EXCEPTION during formula extraction: {str(e)}")
+        raise ValueError(f"Formula extraction failed: {str(e)}")
 
 def extract_vba_macros(file_path):
-    print(f"\n--- VBA Macro Extraction ---")
+    print(f"[*] Extracting VBA macros: {os.path.basename(file_path)}")
+    generated_files = []
     try:
         vba_parser = VBA_Parser(file_path)
         if vba_parser.detect_vba_macros():
-            print("[+] VBA Macros found! Extracting source code...")
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
             for (filename, stream_path, vba_filename, vba_code) in vba_parser.extract_macros():
                 safe_name = "".join([c for c in vba_filename if c.isalpha() or c.isdigit()]).rstrip()
-                output_file = f"vba_module_{safe_name}.txt"
+                # Added base_name to ensure distinct VBA files per client input
+                output_file = f"vba_module_{base_name}_{safe_name}.txt"
                 
                 with open(output_file, "w", encoding="utf-8") as f:
                     f.write(vba_code)
-                print(f"[+] Exported VBA module to: {output_file}")
-        else:
-            print("[-] No VBA macros found in this file.")
+                generated_files.append(output_file)
+        return generated_files
     except Exception as e:
-        print(f"[-] EXCEPTION FLAGGED during VBA extraction: {str(e)}")
+        print(f"[-] EXCEPTION during VBA extraction: {str(e)}")
+        return []
 
 def extract_access_db(file_path):
-    print(f"\n--- Access Database (.accdb) Extraction ---")
-    if not os.path.exists(file_path):
-        print("[!] Error: File not found.")
-        return None
-
+    print(f"[*] Extracting Access DB: {os.path.basename(file_path)}")
+    base_name = os.path.basename(file_path)
+    output_file = f"extracted_access_data_{base_name}.json"
+    
     conn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=' + file_path + ';'
-    extracted_tables = []
     
     try:
         conn = pyodbc.connect(conn_str)
         cursor = conn.cursor()
         
         tables = [row.table_name for row in cursor.tables(tableType='TABLE')]
-        if not tables:
-            print("[-] No user tables found in the Access database.")
-            return None
-            
-        print(f"[+] Found {len(tables)} tables. Extracting schema...")
+        extracted_tables = []
+        
         for table in tables:
             cursor.execute(f"SELECT * FROM [{table}]")
             columns = [column[0] for column in cursor.description]
@@ -123,20 +123,21 @@ def extract_access_db(file_path):
                 "columns": columns,
                 "status": "Schema Extracted"
             })
-            print(f"[+] Extracted schema for table: {table}")
             
         conn.close()
-        
-        output_file = "extracted_access_data.json"
         with open(output_file, "w") as json_file:
             json.dump(extracted_tables, json_file, indent=4)
-            
-        print(f"\n[+] Access database schema saved to {output_file}")
-        return extracted_tables
-
+        return [output_file]
+        
     except pyodbc.Error as e:
-        print("[-] EXCEPTION FLAGGED: Database connection failed. Ensure 64-bit Access Database Engine is installed.")
-        return None
+        error_msg = str(e).lower()
+        # Explicit check for Access Database password protection
+        if "password" in error_msg or "not a valid password" in error_msg or "exclusive" in error_msg:
+            print(f"[!] CRITICAL: The Access database '{base_name}' is PASSWORD PROTECTED.")
+            raise PermissionError("Access Database is password protected.")
+        else:
+            print(f"[-] EXCEPTION: DB connection failed. {error_msg}")
+            raise ValueError(f"Database connection failed: {error_msg}")
     except Exception as e:
         print(f"[-] UNEXPECTED EXCEPTION: {str(e)}")
-        return None
+        raise
