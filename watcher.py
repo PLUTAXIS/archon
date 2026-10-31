@@ -29,7 +29,6 @@ def wait_for_file_transfer(file_path, timeout=60):
             return False
         except Exception:
             time.sleep(1)
-            # FIX: Count retries even in the error path
             retries += 1
     return False
 
@@ -43,7 +42,6 @@ def route_deliverables(deliverables):
     print("\n--- Hand-Off Protocol 2 ---")
     
     try:
-        # FIX: Create folders inside the routing error boundary
         os.makedirs(mainak_folder, exist_ok=True)
         os.makedirs(senpai_folder, exist_ok=True)
         for f in deliverables:
@@ -64,12 +62,12 @@ def archive_original_file(file_path):
     archive_path = os.path.join(archive_folder, unique_name)
     
     try:
-        # FIX: Keep archive directory creation inside the error handler
         os.makedirs(archive_folder, exist_ok=True)
         shutil.move(file_path, archive_path)
         print(f"[+] Input archived securely as '{unique_name}'")
     except Exception as e:
-        print(f"[-] Could not archive file: {str(e)}")
+        # FIX 2: Report archive-directory failure explicitly as a cycle failure
+        raise RuntimeError(f"Archive directory failure: {str(e)}")
 
 def process_file(file_path):
     if not wait_for_file_transfer(file_path):
@@ -89,10 +87,8 @@ def process_file(file_path):
             else:
                 deliverables.extend(analyze_workbook_structure(file_path))
                 deliverables.extend(extract_formulas(file_path))
-                try:
-                    deliverables.extend(extract_vba_macros(file_path))
-                except RuntimeError as vba_err:
-                    print(f"[-] VBA Warning: {str(vba_err)}")
+                # FIX 1: Removed inner try-except. VBA failure now aborts the cycle completely.
+                deliverables.extend(extract_vba_macros(file_path))
                 extraction_success = True
                 
         elif file_path.endswith('.accdb'):
@@ -102,20 +98,26 @@ def process_file(file_path):
     except (ValueError, PermissionError) as e:
         print(f"[!] Validation Exception: {str(e)}. Handled gracefully.")
     except Exception as e:
-        print(f"[-] FATAL EXCEPTION: {str(e)}. Caught at core level.")
+        print(f"[-] FATAL EXCEPTION: {str(e)}. Hand-off aborted.")
+        extraction_success = False
 
-    if deliverables and extraction_success:
-        if route_deliverables(deliverables):
+    # Strict Routing and Archiving Error Boundary
+    try:
+        if deliverables and extraction_success:
+            if route_deliverables(deliverables):
+                archive_original_file(file_path)
+            else:
+                print("[-] Routing failed. Cycle marked as incomplete.")
+        elif not extraction_success:
+            print("[!] Processing skipped/failed. Archiving to clear Dropzone.")
             archive_original_file(file_path)
-    elif not extraction_success:
-        print("[!] Processing skipped/failed. Archiving to clear Dropzone.")
-        archive_original_file(file_path)
-        
-    print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+        print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+    except RuntimeError as arch_err:
+        print(f"[-] CYCLE FAILED: {str(arch_err)}")
+
     print("[*] Waiting for the next file... (Press Ctrl+C to stop)")
 
 class DropzoneHandler(FileSystemEventHandler):
-    # FIX: Explicitly declare dependencies instead of calling globals blindly
     def __init__(self, callback):
         self.process_callback = callback
 
@@ -132,12 +134,11 @@ if __name__ == "__main__":
     os.makedirs(dropzone_path, exist_ok=True)
         
     observer = Observer()
-    # Passing the dependency explicitly
     observer.schedule(DropzoneHandler(process_file), dropzone_path, recursive=False)
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V3 Features: Bot-Proof Boundaries, Retry Counting, Explicit Exceptions.")
+    print(f"[*] V4 Features: Strict Cycle Failures, Atomic VBA Rollbacks.")
     
     try:
         while True:
