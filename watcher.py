@@ -66,7 +66,6 @@ def archive_original_file(file_path):
         shutil.move(file_path, archive_path)
         print(f"[+] Input archived securely as '{unique_name}'")
     except Exception as e:
-        # FIX 2: Report archive-directory failure explicitly as a cycle failure
         raise RuntimeError(f"Archive directory failure: {str(e)}")
 
 def process_file(file_path):
@@ -87,7 +86,6 @@ def process_file(file_path):
             else:
                 deliverables.extend(analyze_workbook_structure(file_path))
                 deliverables.extend(extract_formulas(file_path))
-                # FIX 1: Removed inner try-except. VBA failure now aborts the cycle completely.
                 deliverables.extend(extract_vba_macros(file_path))
                 extraction_success = True
                 
@@ -106,12 +104,15 @@ def process_file(file_path):
         if deliverables and extraction_success:
             if route_deliverables(deliverables):
                 archive_original_file(file_path)
+                # FIX: Success is ONLY printed if routing and archiving both succeed
+                print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
             else:
                 print("[-] Routing failed. Cycle marked as incomplete.")
+                print(f"[-] Execution cycle FAILED for {os.path.basename(file_path)}.")
         elif not extraction_success:
             print("[!] Processing skipped/failed. Archiving to clear Dropzone.")
             archive_original_file(file_path)
-        print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+            print(f"[-] Execution cycle FAILED for {os.path.basename(file_path)}.")
     except RuntimeError as arch_err:
         print(f"[-] CYCLE FAILED: {str(arch_err)}")
 
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V4 Features: Strict Cycle Failures, Atomic VBA Rollbacks.")
+    print(f"[*] V5 Features: Accurate Audit Logging & Atomic Rollbacks.")
     
     try:
         while True:
