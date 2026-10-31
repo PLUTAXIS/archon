@@ -1,0 +1,17 @@
+{
+  "formulas": [
+    {"sheet": "Budget", "cell": "C2", "formula": "=A2+B2", "cluster": "R1C1-001"},
+    {"sheet": "Budget", "cell": "C3", "formula": "=A3+B3", "cluster": "R1C1-001"},
+    {"sheet": "Budget", "cell": "D2", "formula": "=SUM($C$2:$C$3)"},
+    {"sheet": "Summary", "cell": "A1", "formula": "=Budget!D2*1.1"},
+    {"sheet": "Summary", "cell": "B1", "formula": "=IF(A1>0,\"A1 is fine\",LOG10(100))"},
+    {"sheet": "Summary", "cell": "C1", "formula": "='Budget'!C2+Summary!A3"}
+  ],
+  "vba": [
+    {
+      "module": "Module1",
+      "default_sheet": "Budget",
+      "code": "Option Explicit\n' Update totals\nSub UpdateTotals()\n    Range(\"A2\").Value = 100\n    Worksheets(\"Summary\").Range(\"A3\") = 5\n    Cells(3, 2).Value = 7\n    Dim i As Long\n    For i = 1 To 10\n        Range(\"A\" & i).Value = i\n    Next i\n    If x > 1 Then Range(\"B2\").Value = 2\n    y = Range(\"A1\").Value\nEnd Sub\nSub Overwrite()\n    With Worksheets(\"Summary\")\n        .Range(\"A1\").Value = 0\n    End With\n    Sheets(\"Budget\").Range(\"D2\").Offset(1, 0).Value = 9\nEnd Sub\n"
+    }
+  ]
+}
