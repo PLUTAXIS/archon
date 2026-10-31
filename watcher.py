@@ -139,7 +139,7 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V5 Features: Accurate Audit Logging & Atomic Rollbacks.")
+    print(f"[*] V5.1 Features: Accurate Audit Logging & Strict Cycle Failures.")
     
     try:
         while True:
