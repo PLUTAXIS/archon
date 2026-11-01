@@ -1,0 +1,12 @@
+{
+  "bug_id": "BUG-0001",
+  "type": "HARDCODED_OVERRIDE",
+  "sheet": "Revenue",
+  "address": "G4312",
+  "expected_r1c1": "=RC[-2]*RC[-1]",
+  "observed": 145000,
+  "cluster_id": "Revenue!R1C7#c17",
+  "downstream_node_count": 2,
+  "downstream_sample": ["Summary!R12C4#c2"],
+  "severity": 3
+}
