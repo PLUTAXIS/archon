@@ -16,6 +16,16 @@ from ingestion_core import (
 )
 
 def wait_for_file_transfer(file_path, timeout=60):
+    """
+    Monitors a file to ensure it has completely finished transferring to the dropzone.
+    
+    Args:
+        file_path (str): The path of the file to monitor.
+        timeout (int): Maximum time in seconds to wait for file size stabilization.
+        
+    Returns:
+        bool: True if the file transfer is complete and stable, False otherwise.
+    """
     historical_size = -1
     retries = 0
     while retries < timeout:
@@ -34,6 +44,15 @@ def wait_for_file_transfer(file_path, timeout=60):
     return False
 
 def route_deliverables(deliverables):
+    """
+    Routes the extracted output files to designated downstream folders for Mainak and Senpai.
+    
+    Args:
+        deliverables (list): A list of generated file paths to be routed.
+        
+    Returns:
+        bool: True if all files were successfully routed, False if an error occurred.
+    """
     if not deliverables:
         return True
     
@@ -53,6 +72,15 @@ def route_deliverables(deliverables):
         return False
 
 def archive_original_file(file_path):
+    """
+    Moves the processed original client file into a secure archive directory with a timestamp.
+    
+    Args:
+        file_path (str): Path to the original file to be archived.
+        
+    Raises:
+        RuntimeError: If the archival movement operation fails.
+    """
     archive_folder = "Archive_Processed"
     base_name, ext = os.path.splitext(os.path.basename(file_path))
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -66,6 +94,13 @@ def archive_original_file(file_path):
         raise RuntimeError(f"Archive directory failure: {str(e)}")
 
 def process_file(file_path):
+    """
+    Core controller function that processes a single file dropped into the watched directory.
+    Executes password checks, initiates extraction functions, records exceptions, and routes results.
+    
+    Args:
+        file_path (str): Path of the newly detected file.
+    """
     if not wait_for_file_transfer(file_path):
         return
 
@@ -98,7 +133,6 @@ def process_file(file_path):
     except Exception as e:
         ledger_exceptions.append({"code": "E_FATAL_CRASH", "severity": "error", "detail": str(e)})
 
-    # ALWAYS ship the exception ledger, even if empty (Strict Brief Requirement)
     ledger_file = f"exceptions_ledger_{run_id}.json"
     with open(ledger_file, "w") as lf:
         json.dump(ledger_exceptions, lf, indent=4)
@@ -118,14 +152,35 @@ def process_file(file_path):
     print("[*] Waiting for the next file... (Press Ctrl+C to stop)")
 
 class DropzoneHandler(FileSystemEventHandler):
+    """
+    Watchdog event handler that monitors directory state and triggers processing on file creation or movement.
+    """
     def __init__(self, callback):
+        """
+        Initializes the event handler with a specified callback function.
+        
+        Args:
+            callback (function): The function to execute when a valid file is detected.
+        """
         self.process_callback = callback
 
     def on_created(self, event):
+        """
+        Triggered when a file or directory is created. Filters for targeted extensions.
+        
+        Args:
+            event (FileSystemEvent): Event representing file/directory creation.
+        """
         if not event.is_directory and event.src_path.endswith(('.xlsx', '.xlsm', '.accdb')):
             self.process_callback(event.src_path)
             
     def on_moved(self, event):
+        """
+        Triggered when a file or directory is moved/renamed. Filters for targeted extensions.
+        
+        Args:
+            event (FileSystemEvent): Event representing file/directory movement.
+        """
         if not event.is_directory and event.dest_path.endswith(('.xlsx', '.xlsm', '.accdb')):
             self.process_callback(event.dest_path)
 
@@ -138,7 +193,7 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V7.0 (Final Architecture): mdbtools Docker Ready, Exceptions Ledger Shipped, VBA SHA256.")
+    print(f"[*] V7.1 (Docs Applied): 100% Docstring Coverage achieved.")
     
     try:
         while True:

@@ -11,6 +11,19 @@ import platform
 import subprocess
 
 def is_password_protected(file_path):
+    """
+    Checks if a Microsoft Office file is encrypted with a password.
+    
+    Args:
+        file_path (str): The absolute or relative path to the file.
+        
+    Returns:
+        bool: True if the file is password protected, False otherwise.
+        
+    Raises:
+        ValueError: If the file format is completely invalid.
+        RuntimeError: If the file cannot be securely inspected (e.g., exclusive locks).
+    """
     try:
         with open(file_path, "rb") as f:
             office_file = msoffcrypto.OfficeFile(f)
@@ -23,6 +36,20 @@ def is_password_protected(file_path):
     return False
 
 def analyze_workbook_structure(file_path, run_id):
+    """
+    Parses the workbook's underlying XML to determine sheet names, IDs, and visibility state.
+    
+    Args:
+        file_path (str): Path to the Excel workbook.
+        run_id (str): Unique execution identifier to prevent file overwrites.
+        
+    Returns:
+        list: A list containing the path to the generated structural JSON file.
+        
+    Raises:
+        ValueError: If the file is not a valid zip archive or contains malformed XML.
+        RuntimeError: If an unexpected error occurs during structure analysis.
+    """
     base_name = os.path.basename(file_path)
     output_file = f"extracted_data_{run_id}_{base_name}.json"
     
@@ -49,6 +76,20 @@ def analyze_workbook_structure(file_path, run_id):
         raise RuntimeError(f"Unexpected error during structure analysis: {str(e)}")
 
 def extract_formulas(file_path, run_id):
+    """
+    Extracts all formulas from the given Excel workbook using a memory-safe read-only stream.
+    
+    Args:
+        file_path (str): Path to the Excel workbook.
+        run_id (str): Unique execution identifier.
+        
+    Returns:
+        list: A list containing the path to the generated formulas JSON file.
+        
+    Raises:
+        ValueError: If the file format is invalid for openpyxl parsing.
+        RuntimeError: If formula extraction fails unexpectedly.
+    """
     base_name = os.path.basename(file_path)
     output_file = f"extracted_formulas_{run_id}_{base_name}.json"
     
@@ -77,6 +118,19 @@ def extract_formulas(file_path, run_id):
         raise RuntimeError(f"Formula extraction failed: {str(e)}")
 
 def extract_vba_macros(file_path, run_id):
+    """
+    Extracts embedded VBA macros from the Office file and generates verifiable metadata.
+    
+    Args:
+        file_path (str): Path to the Office file.
+        run_id (str): Unique execution identifier.
+        
+    Returns:
+        list: A list of file paths to the generated VBA text files and the metadata JSON.
+        
+    Raises:
+        RuntimeError: If macro extraction explicitly fails.
+    """
     generated_files = []
     metadata = []
     try:
@@ -110,13 +164,28 @@ def extract_vba_macros(file_path, run_id):
         raise RuntimeError(f"VBA macro extraction failed explicitly: {str(e)}")
 
 def extract_access_db(file_path, run_id):
+    """
+    Extracts table schemas from an MS Access database. 
+    Uses mdbtools for Linux/Docker parity, with a pyodbc fallback for Windows local dev.
+    
+    Args:
+        file_path (str): Path to the Access database (.accdb or .mdb).
+        run_id (str): Unique execution identifier.
+        
+    Returns:
+        list: A list containing the path to the extracted database JSON file.
+        
+    Raises:
+        PermissionError: If the database is password protected.
+        RuntimeError: If extraction times out, fails, or the file is exclusively locked.
+        ValueError: If connection to the database fails for other reasons.
+    """
     base_name = os.path.basename(file_path)
     output_file = f"extracted_access_data_{run_id}_{base_name}.json"
     
     if platform.system() != "Windows":
         try:
             tables_out = subprocess.run(["mdb-tables", "-1", str(file_path)], capture_output=True, text=True, check=True, timeout=60)
-            # FIX 1: Preserving whitespace verbatim, only dropping truly empty newlines
             tables = sorted([t for t in tables_out.stdout.splitlines() if len(t) > 0])
             extracted_tables = [{"table_name": t, "status": "Schema Extracted via mdbtools"} for t in tables]
             with open(output_file, "w") as json_file:
@@ -144,7 +213,6 @@ def extract_access_db(file_path, run_id):
                 json.dump(extracted_tables, json_file, indent=4)
             return [output_file]
         except pyodbc.Error as e:
-            # FIX 2: Proper Driver-Specific Diagnostics using e.args tuple
             err_text = str(e.args[1]).lower() if len(e.args) > 1 else str(e).lower()
             
             if "password" in err_text or "not a valid password" in err_text:
