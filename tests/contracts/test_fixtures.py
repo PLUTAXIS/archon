@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from archon.contracts.bugs import BugLedgerEntry
+from archon.contracts.explain import ExplanationRecord
 from archon.contracts.extract import RawExtract
 from archon.contracts.graph import DagGraph
-from archon.contracts.bugs import BugLedgerEntry
 from archon.contracts.parity import ParityCertificate
-from archon.contracts.explain import ExplanationRecord
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
