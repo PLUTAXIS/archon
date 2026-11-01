@@ -2,6 +2,8 @@ import sys
 import time
 import os
 import shutil
+import uuid
+import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -14,7 +16,6 @@ from ingestion_core import (
 )
 
 def wait_for_file_transfer(file_path, timeout=60):
-    print(f"[*] Verifying file transfer integrity: {os.path.basename(file_path)}")
     historical_size = -1
     retries = 0
     while retries < timeout:
@@ -34,12 +35,10 @@ def wait_for_file_transfer(file_path, timeout=60):
 
 def route_deliverables(deliverables):
     if not deliverables:
-        print("[-] No deliverables to route for this input.")
         return True
     
     mainak_folder = "For_Mainak"
     senpai_folder = "For_Senpai"
-    print("\n--- Hand-Off Protocol 2 ---")
     
     try:
         os.makedirs(mainak_folder, exist_ok=True)
@@ -48,7 +47,6 @@ def route_deliverables(deliverables):
             if os.path.exists(f):
                 shutil.copy(f, os.path.join(mainak_folder, f))
                 shutil.move(f, os.path.join(senpai_folder, f))
-        print(f"[+] Successfully pushed {len(deliverables)} secure deliverables.")
         return True
     except Exception as e:
         print(f"[-] ERROR during hand-off routing: {str(e)}")
@@ -64,57 +62,58 @@ def archive_original_file(file_path):
     try:
         os.makedirs(archive_folder, exist_ok=True)
         shutil.move(file_path, archive_path)
-        print(f"[+] Input archived securely as '{unique_name}'")
     except Exception as e:
         raise RuntimeError(f"Archive directory failure: {str(e)}")
 
 def process_file(file_path):
     if not wait_for_file_transfer(file_path):
-        print("[-] File transfer timed out or file disappeared.")
         return
 
     print(f"\n[==================================================]")
-    print(f"[ALERT] New client file locked for processing: {os.path.basename(file_path)}")
+    print(f"[ALERT] Processing locked client file: {os.path.basename(file_path)}")
     
+    run_id = uuid.uuid4().hex[:8]
     deliverables = []
+    ledger_exceptions = []
     extraction_success = False
     
     try:
         if file_path.endswith(('.xlsx', '.xlsm')):
             if is_password_protected(file_path):
-                print("[!] Audit Flag: Password-protected file identified. Skipping extraction.")
+                ledger_exceptions.append({"code": "E_PASSWORD_PROTECTED", "severity": "warn", "detail": "File is password protected"})
             else:
-                deliverables.extend(analyze_workbook_structure(file_path))
-                deliverables.extend(extract_formulas(file_path))
-                deliverables.extend(extract_vba_macros(file_path))
+                deliverables.extend(analyze_workbook_structure(file_path, run_id))
+                deliverables.extend(extract_formulas(file_path, run_id))
+                deliverables.extend(extract_vba_macros(file_path, run_id))
                 extraction_success = True
                 
         elif file_path.endswith('.accdb'):
-            deliverables.extend(extract_access_db(file_path))
+            deliverables.extend(extract_access_db(file_path, run_id))
             extraction_success = True
             
     except (ValueError, PermissionError) as e:
-        print(f"[!] Validation Exception: {str(e)}. Handled gracefully.")
+        ledger_exceptions.append({"code": "E_VALIDATION_ERROR", "severity": "error", "detail": str(e)})
+    except RuntimeError as e:
+        ledger_exceptions.append({"code": "E_RUNTIME_FAILURE", "severity": "error", "detail": str(e)})
     except Exception as e:
-        print(f"[-] FATAL EXCEPTION: {str(e)}. Hand-off aborted.")
-        extraction_success = False
+        ledger_exceptions.append({"code": "E_FATAL_CRASH", "severity": "error", "detail": str(e)})
 
-    # Strict Routing and Archiving Error Boundary
+    # ALWAYS ship the exception ledger, even if empty (Strict Brief Requirement)
+    ledger_file = f"exceptions_ledger_{run_id}.json"
+    with open(ledger_file, "w") as lf:
+        json.dump(ledger_exceptions, lf, indent=4)
+    deliverables.append(ledger_file)
+
     try:
-        if deliverables and extraction_success:
+        if extraction_success or ledger_exceptions:
             if route_deliverables(deliverables):
                 archive_original_file(file_path)
-                # FIX: Success is ONLY printed if routing and archiving both succeed
-                print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+                status = "[SUCCESS]" if extraction_success else "[PARTIAL/FAILED]"
+                print(f"{status} Execution cycle finished for {os.path.basename(file_path)}.")
             else:
-                print("[-] Routing failed. Cycle marked as incomplete.")
-                print(f"[-] Execution cycle FAILED for {os.path.basename(file_path)}.")
-        elif not extraction_success:
-            print("[!] Processing skipped/failed. Archiving to clear Dropzone.")
-            archive_original_file(file_path)
-            print(f"[-] Execution cycle FAILED for {os.path.basename(file_path)}.")
+                print(f"[-] Execution cycle FAILED (Routing Error) for {os.path.basename(file_path)}.")
     except RuntimeError as arch_err:
-        print(f"[-] CYCLE FAILED: {str(arch_err)}")
+        print(f"[-] CYCLE FAILED (Archive Error): {str(arch_err)}")
 
     print("[*] Waiting for the next file... (Press Ctrl+C to stop)")
 
@@ -139,7 +138,7 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V5.1 Features: Accurate Audit Logging & Strict Cycle Failures.")
+    print(f"[*] V7.0 (Final Architecture): mdbtools Docker Ready, Exceptions Ledger Shipped, VBA SHA256.")
     
     try:
         while True:
