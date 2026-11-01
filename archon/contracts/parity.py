@@ -63,25 +63,11 @@ class ParityCertificate(BaseModel):
         if not (0 <= self.cases_passed <= self.cases_total):
             raise ValueError("cases_passed must be between 0 and cases_total")
 
-        expected = (self.cases_passed / self.cases_total) * 100
+        expected = Decimal(self.cases_passed) * 100 / Decimal(self.cases_total)
         expected_str = f"{expected:.2f}"
         if self.match_rate != expected_str:
             raise ValueError(
                 f"match_rate '{self.match_rate}' does not match the computed "
                 f"rate '{expected_str}' from cases_passed/cases_total"
             )
-        return self
-
-    @model_validator(mode="after")
-    def counts_must_match_rate(self) -> Self:
-        """cases_passed must be within bounds and match_rate must equal the
-        percentage computed from the counts. Zero cases is rejected: a
-        certificate over no cases proves nothing."""
-        if self.cases_total < 1:
-            raise ValueError("cases_total must be >= 1")
-        if not 0 <= self.cases_passed <= self.cases_total:
-            raise ValueError("cases_passed must be within 0..cases_total")
-        expected = f"{Decimal(self.cases_passed) * 100 / Decimal(self.cases_total):.2f}"
-        if self.match_rate != expected:
-            raise ValueError(f"match_rate {self.match_rate} != computed {expected}")
         return self
