@@ -12,9 +12,6 @@ dependencies = [
     "pydantic-core>=2.50.2",
 ]
 
-[project.scripts]
-archon = "archon:main"
-
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]
 build-backend = "uv_build"
@@ -25,3 +22,11 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.3",
 ]
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.ruff.lint.per-file-ignores]
+"archon/graph/*" = ["UP031", "TRY004", "C408"]
+"archon/scrubber/*" = ["UP031"]
+"tests/test_scrubber.py" = ["UP031"]

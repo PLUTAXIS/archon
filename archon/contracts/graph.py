@@ -67,9 +67,16 @@ class DagGraph(BaseModel):
     stats: Stats
 
     @model_validator(mode="after")
-    def edges_must_reference_known_nodes(self) -> "DagGraph":
-        """Reject any edge whose source or target id is not present in nodes."""
-        node_ids = {n.id for n in self.nodes}
+    def edges_must_reference_known_nodes(self) -> DagGraph:
+        """Reject duplicate node ids, then reject any edge whose source or
+        target id is not present among the (now confirmed unique) nodes."""
+        seen: set[str] = set()
+        for node in self.nodes:
+            if node.id in seen:
+                raise ValueError(f"duplicate node id '{node.id}'")
+            seen.add(node.id)
+
+        node_ids = seen
         for edge in self.edges:
             if edge.source not in node_ids:
                 raise ValueError(f"edge source '{edge.source}' is not a known node id")
