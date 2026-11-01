@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Self
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -53,7 +53,7 @@ class ParityCertificate(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def match_rate_must_agree_with_case_counts(self) -> ParityCertificate:
+    def match_rate_must_agree_with_case_counts(self) -> Self:
         """Reject a certificate where cases_passed is out of bounds for cases_total,
         or where match_rate does not equal the percentage those counts imply.
         Policy: cases_total == 0 is invalid — a certificate must cover at least
@@ -73,7 +73,7 @@ class ParityCertificate(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def counts_must_match_rate(self) -> ParityCertificate:
+    def counts_must_match_rate(self) -> Self:
         """cases_passed must be within bounds and match_rate must equal the
         percentage computed from the counts. Zero cases is rejected: a
         certificate over no cases proves nothing."""
