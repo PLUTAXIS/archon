@@ -36,7 +36,6 @@ def analyze_workbook_structure(file_path, run_id):
             for sheet in root.findall('.//main:sheet', ns):
                 sheet_name = sheet.attrib.get('name')
                 sheet_id = sheet.attrib.get('sheetId')
-                # Capturing visible/hidden/veryHidden accurately as per the brief
                 state = sheet.attrib.get('state', 'visible') 
                 extracted_sheets.append({"name": sheet_name, "id": sheet_id, "state": state})
                 
@@ -54,11 +53,12 @@ def extract_formulas(file_path, run_id):
     output_file = f"extracted_formulas_{run_id}_{base_name}.json"
     
     try:
-        # read_only=True enforced for 500k cell memory safety
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=False)
         all_formulas = []
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
+            # Reset dimensions to avoid iteration crashes in read-only mode
+            sheet.reset_dimensions()
             for row in sheet.iter_rows():
                 for cell in row:
                     if cell.data_type == 'f' or (isinstance(cell.value, str) and cell.value.startswith('=')):
@@ -88,12 +88,10 @@ def extract_vba_macros(file_path, run_id):
                 safe_name = "".join([c for c in vba_filename if c.isalpha() or c.isdigit()]).rstrip()
                 output_file = f"vba_module_{run_id}_{base_name}_{index}_{safe_name}.txt"
                 
-                # Verbatim source save
                 with open(output_file, "w", encoding="utf-8") as f:
                     f.write(vba_code)
                 generated_files.append(output_file)
                 
-                # SHA256 and Line Count for Senpai's validation
                 code_bytes = vba_code.encode('utf-8', errors='replace')
                 metadata.append({
                     "module_name": safe_name,
@@ -116,19 +114,21 @@ def extract_access_db(file_path, run_id):
     base_name = os.path.basename(file_path)
     output_file = f"extracted_access_data_{run_id}_{base_name}.json"
     
-    # 1. Enterprise Standard: mdbtools for Docker/Linux
     if platform.system() != "Windows":
         try:
-            tables_out = subprocess.run(["mdb-tables", "-1", str(file_path)], capture_output=True, text=True, check=True)
-            tables = sorted(tables_out.stdout.split())
+            # Added timeout to prevent watchdog freeze
+            tables_out = subprocess.run(["mdb-tables", "-1", str(file_path)], capture_output=True, text=True, check=True, timeout=60)
+            # Split by line to handle table names with whitespaces
+            tables = sorted([t.strip() for t in tables_out.stdout.splitlines() if t.strip()])
             extracted_tables = [{"table_name": t, "status": "Schema Extracted via mdbtools"} for t in tables]
             with open(output_file, "w") as json_file:
                 json.dump(extracted_tables, json_file, indent=4)
             return [output_file]
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Access extraction timed out (Hung Process).")
         except Exception as e:
             raise RuntimeError(f"mdbtools extraction failed in Linux environment: {str(e)}")
             
-    # 2. Local Fallback: pyodbc for Windows development only
     else:
         import pyodbc
         conn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=' + file_path + ';'
@@ -147,8 +147,11 @@ def extract_access_db(file_path, run_id):
             return [output_file]
         except pyodbc.Error as e:
             error_msg = str(e).lower()
-            if "password" in error_msg or "exclusive" in error_msg:
+            # Distinguish Access password errors from exclusive locks
+            if "password" in error_msg or "not a valid password" in error_msg:
                 raise PermissionError("Access Database is password protected.")
+            elif "exclusive" in error_msg or "in use" in error_msg:
+                raise RuntimeError("Access Database is exclusively locked by another process.")
             raise ValueError(f"Database connection failed: {error_msg}")
         except Exception as e:
             raise RuntimeError(f"Access extraction failed: {str(e)}")
