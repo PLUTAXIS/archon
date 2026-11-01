@@ -9,6 +9,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def _fixture_files():
+    """Return all fixture JSON files, or an empty list if the fixtures directory is missing."""
     if not FIXTURES_DIR.exists():
         return []
     return sorted(FIXTURES_DIR.glob("*.json"))
