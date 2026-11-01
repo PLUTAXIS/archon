@@ -1,7 +1,6 @@
 import re
 from datetime import datetime
-from decimal import Decimal
-from typing import Any
+from typing import Any, Self
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -53,7 +52,7 @@ class ParityCertificate(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def match_rate_must_agree_with_case_counts(self) -> ParityCertificate:
+    def match_rate_must_agree_with_case_counts(self) -> Self:
         """Reject a certificate where cases_passed is out of bounds for cases_total,
         or where match_rate does not equal the percentage those counts imply.
         Policy: cases_total == 0 is invalid — a certificate must cover at least
@@ -63,25 +62,15 @@ class ParityCertificate(BaseModel):
         if not (0 <= self.cases_passed <= self.cases_total):
             raise ValueError("cases_passed must be between 0 and cases_total")
 
-        expected = (self.cases_passed / self.cases_total) * 100
-        expected_str = f"{expected:.2f}"
+        # Integer arithmetic, half-up to 2 decimals: independent of any
+        # decimal context and of float rounding.
+        hundredths = (self.cases_passed * 20000 + self.cases_total) // (
+            2 * self.cases_total
+        )
+        expected_str = f"{hundredths // 100}.{hundredths % 100:02d}"
         if self.match_rate != expected_str:
             raise ValueError(
                 f"match_rate '{self.match_rate}' does not match the computed "
                 f"rate '{expected_str}' from cases_passed/cases_total"
             )
-        return self
-
-    @model_validator(mode="after")
-    def counts_must_match_rate(self) -> ParityCertificate:
-        """cases_passed must be within bounds and match_rate must equal the
-        percentage computed from the counts. Zero cases is rejected: a
-        certificate over no cases proves nothing."""
-        if self.cases_total < 1:
-            raise ValueError("cases_total must be >= 1")
-        if not 0 <= self.cases_passed <= self.cases_total:
-            raise ValueError("cases_passed must be within 0..cases_total")
-        expected = f"{Decimal(self.cases_passed) * 100 / Decimal(self.cases_total):.2f}"
-        if self.match_rate != expected:
-            raise ValueError(f"match_rate {self.match_rate} != computed {expected}")
         return self

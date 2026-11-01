@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -36,7 +36,7 @@ class ExplanationRecord(BaseModel):
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
 
     @model_validator(mode="after")
-    def status_must_match_populated_fields(self) -> ExplanationRecord:
+    def status_must_match_populated_fields(self) -> Self:
         """Enforce that 'unverified' records carry no invented explanation, and
         'matched' records always carry an idiom. This stops a bug from accidentally
         producing a fabricated explanation for a formula the engine did not recognize."""

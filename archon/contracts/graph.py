@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
@@ -67,7 +67,7 @@ class DagGraph(BaseModel):
     stats: Stats
 
     @model_validator(mode="after")
-    def edges_must_reference_known_nodes(self) -> DagGraph:
+    def edges_must_reference_known_nodes(self) -> Self:
         """Reject duplicate node ids, then reject any edge whose source or
         target id is not present among the (now confirmed unique) nodes."""
         seen: set[str] = set()
