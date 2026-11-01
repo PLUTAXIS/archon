@@ -1,16 +1,22 @@
 from typing import Literal
-from pydantic import BaseModel, UUID4
+from uuid import UUID
+
+from pydantic import BaseModel, model_validator
+
 from archon.contracts.bugs import BugLedgerEntry
+
 
 class Risk(BaseModel):
     model_config = {"extra": "forbid"}
     score: int
     flags: list[str]
 
+
 class VbaRef(BaseModel):
     model_config = {"extra": "forbid"}
     module: str
     line: int
+
 
 class Node(BaseModel):
     model_config = {"extra": "forbid"}
@@ -25,6 +31,7 @@ class Node(BaseModel):
     header: str | None = None
     risk: Risk | None = None
 
+
 class Edge(BaseModel):
     model_config = {"extra": "forbid"}
     source: str
@@ -33,6 +40,7 @@ class Edge(BaseModel):
     confidence: Literal["static", "dynamic"]
     vba_ref: VbaRef | None = None
 
+
 class Cycle(BaseModel):
     model_config = {"extra": "forbid"}
     id: str
@@ -40,18 +48,31 @@ class Cycle(BaseModel):
     classification: Literal["intentional_iterative", "user_error", "unclassified"]
     evidence: str
 
+
 class Stats(BaseModel):
     model_config = {"extra": "forbid"}
     cells_in: int
     nodes_out: int
     compression_ratio: float
 
+
 class DagGraph(BaseModel):
     model_config = {"extra": "forbid"}
     schema_version: Literal["1.0"]
-    workbook_id: UUID4
+    workbook_id: UUID
     nodes: list[Node]
     edges: list[Edge]
     bugs: list[BugLedgerEntry]  # No default, must be explicitly passed
     cycles: list[Cycle]
     stats: Stats
+
+    @model_validator(mode="after")
+    def edges_must_reference_known_nodes(self) -> "DagGraph":
+        """Reject any edge whose source or target id is not present in nodes."""
+        node_ids = {n.id for n in self.nodes}
+        for edge in self.edges:
+            if edge.source not in node_ids:
+                raise ValueError(f"edge source '{edge.source}' is not a known node id")
+            if edge.target not in node_ids:
+                raise ValueError(f"edge target '{edge.target}' is not a known node id")
+        return self

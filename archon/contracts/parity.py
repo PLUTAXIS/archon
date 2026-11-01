@@ -1,7 +1,9 @@
 import re
 from typing import Any
+from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, UUID4, field_validator
+from pydantic import BaseModel, field_validator
+
 
 class TolerancePolicy(BaseModel):
     model_config = {"extra": "forbid"}
@@ -9,6 +11,7 @@ class TolerancePolicy(BaseModel):
     date_mode: str
     rounding: str
     empty_cell: str
+
 
 class CaseResult(BaseModel):
     model_config = {"extra": "forbid"}
@@ -18,16 +21,18 @@ class CaseResult(BaseModel):
     python: float | str | bool | None
     delta: float
 
+
 class Signature(BaseModel):
     model_config = {"extra": "forbid"}
     alg: str
     pubkey: str
     sig: str
 
+
 class ParityCertificate(BaseModel):
     model_config = {"extra": "forbid"}
-    certificate_id: UUID4
-    workbook_id: UUID4
+    certificate_id: UUID
+    workbook_id: UUID
     generated_at: datetime
     harness_version: str
     cases_total: int
@@ -40,7 +45,7 @@ class ParityCertificate(BaseModel):
     @field_validator("match_rate")
     @classmethod
     def must_be_two_decimal_percentage(cls, v: str) -> str:
-        """Validate match_rate is formatted exactly as a 2-decimal string."""
-        if not re.match(r"^\d{1,3}\.\d{2}$", v):
+        """Validate match_rate is formatted exactly as a 2-decimal percentage string."""
+        if not re.fullmatch(r"\d{1,3}\.\d{2}", v):
             raise ValueError("match_rate must be a 2-decimal string (e.g. '100.00')")
         return v
