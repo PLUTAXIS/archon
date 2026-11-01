@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "workbook_id": "123e4567-e89b-12d3-a456-426614174000",
+  "nodes": [
+    {
+      "id": "Revenue!R1C7#c1",
+      "kind": "cell",
+      "sheet": "Revenue",
+      "r1c1": "=RC[-2]*RC[-1]",
+      "anchor": "G4"
+    }
+  ],
+  "edges": [],
+  "bugs": [],
+  "cycles": [],
+  "stats": {
+    "cells_in": 100,
+    "nodes_out": 1,
+    "compression_ratio": 100.0
+  }
+}
