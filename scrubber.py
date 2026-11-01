@@ -96,7 +96,7 @@ def scrub_sheet(xml, m):
                 body = re.sub(r"<is>.*?</is>",
                               lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.S)
             elif kind in ("str", "d"):  # text, or an ISO date, stored directly in <v>
-                body = re.sub(r"<v>(.*?)</v>", lambda x: "<v>%s</v>" % m.text(x.group(1)),
+                body = re.sub(r"<v\s*>(.*?)</v\s*>", lambda x: "<v>%s</v>" % m.text(x.group(1)),
                               body, flags=re.S)
                 if kind == "d":  # dummy text is not a valid date, so mark the cell as text
                     attrs = re.sub(r'\bt="d"', 't="str"', attrs)
