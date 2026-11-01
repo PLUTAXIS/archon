@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -8,10 +7,16 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies and build output
 node_modules
 dist
 dist-ssr
 *.local
+
+# Environment files
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -23,9 +28,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-=======
-dag_graph.json
-__pycache__/
-.venv/
-.vscode/
->>>>>>> origin/main
+
+# Real client graphs must never be committed (sample dag_graph.json IS tracked)
+public/client_*.json
