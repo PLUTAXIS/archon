@@ -1,0 +1,14 @@
+patterns:
+  - id: running_balance
+    idiom: running_balance
+    shape: additive_chain
+    template: "Running balance from {prior_row}{added_clause}{subtracted_clause}."
+    clauses:
+      added: ", adding {added}"
+      subtracted: ", subtracting {subtracted}"
+  - id: tiered_rate_table
+    idiom: tiered_rate_table
+    shape: if_ladder
+    function: IF
+    min_depth: 3
+    template: "Tiered rate table pivoting on {pivot} with {bracket_count} brackets."
