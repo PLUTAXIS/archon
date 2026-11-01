@@ -50,9 +50,15 @@ class Cell(BaseModel):
     is_array_formula: bool = False
     shared_group_id: int | None = None
 
+        
     @field_validator("formula")
     @classmethod
     def must_keep_equals(cls, v: str | None) -> str | None:
+        """Ensure a non-null formula string retains its leading '=' sign."""
+        if v is not None and not v.startswith("="):
+            raise ValueError("formula must retain its leading '='")
+        return v
+        """Ensure a non-null formula string retains its leading '=' sign."""
         if v is not None and not v.startswith("="):
             raise ValueError("formula must retain its leading '='")
         return v
