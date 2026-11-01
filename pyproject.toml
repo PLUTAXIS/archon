@@ -1,0 +1,32 @@
+[project]
+name = "archon"
+version = "0.1.0"
+description = "ARCHON — deterministic spreadsheet audit engine: extracts, analyzes and explains Excel/Access models without an LLM"
+readme = "README.md"
+authors = [
+    { name = "Wriksg", email = "wriksankarghosh2006@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.14.2",
+    "pydantic-core>=2.50.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.ruff.lint.per-file-ignores]
+"archon/graph/*" = ["UP031", "TRY004", "C408"]
+"archon/scrubber/*" = ["UP031"]
+"tests/test_scrubber.py" = ["UP031"]

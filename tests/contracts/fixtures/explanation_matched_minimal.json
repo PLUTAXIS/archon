@@ -1,0 +1,14 @@
+{
+  "node_id": "Revenue!R1C7#c17",
+  "status": "matched",
+  "idiom": "product",
+  "plain_english": "Gross revenue for each product line, before tax.",
+  "business_concept": "revenue_recognition",
+  "evidence": {
+    "pattern_id": "PAT-014",
+    "captured_vars": {"rate_cell": "Assumptions!B7", "base_cell": "Revenue!F4"},
+    "header_resolved": true,
+    "header_terms": ["gross", "revenue"]
+  },
+  "confidence": 1.0
+}
