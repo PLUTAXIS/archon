@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from decimal import Decimal
 from typing import Any, Self
 from uuid import UUID
 
@@ -63,8 +62,12 @@ class ParityCertificate(BaseModel):
         if not (0 <= self.cases_passed <= self.cases_total):
             raise ValueError("cases_passed must be between 0 and cases_total")
 
-        expected = Decimal(self.cases_passed) * 100 / Decimal(self.cases_total)
-        expected_str = f"{expected:.2f}"
+        # Integer arithmetic, half-up to 2 decimals: independent of any
+        # decimal context and of float rounding.
+        hundredths = (self.cases_passed * 20000 + self.cases_total) // (
+            2 * self.cases_total
+        )
+        expected_str = f"{hundredths // 100}.{hundredths % 100:02d}"
         if self.match_rate != expected_str:
             raise ValueError(
                 f"match_rate '{self.match_rate}' does not match the computed "

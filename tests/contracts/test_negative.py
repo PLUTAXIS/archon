@@ -52,3 +52,25 @@ def test_matched_without_idiom_rejected():
     data["idiom"] = None
     with pytest.raises(ValidationError, match="idiom"):
         ExplanationRecord.model_validate(data)
+
+
+def test_match_rate_ignores_decimal_context() -> None:
+    """1 of 6 is 16.67 even when the caller lowers decimal precision."""
+    import decimal
+
+    data = _load("parity_certificate_minimal.json")
+    data["cases_total"] = 6
+    data["cases_passed"] = 1
+    data["match_rate"] = "16.67"
+    data["case_results"] = []
+    with decimal.localcontext() as ctx:
+        ctx.prec = 3
+        ParityCertificate.model_validate(data)
+
+
+def test_match_rate_rounds_half_up() -> None:
+    """1 of 8 is exactly 12.5 and 1 of 16 is exactly 6.25; 1 of 32 is 3.125 -> 3.13."""
+    data = _load("parity_certificate_minimal.json")
+    data["case_results"] = []
+    data["cases_total"], data["cases_passed"], data["match_rate"] = 32, 1, "3.13"
+    ParityCertificate.model_validate(data)
