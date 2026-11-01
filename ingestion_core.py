@@ -57,7 +57,6 @@ def extract_formulas(file_path, run_id):
         all_formulas = []
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
-            # Reset dimensions to avoid iteration crashes in read-only mode
             sheet.reset_dimensions()
             for row in sheet.iter_rows():
                 for cell in row:
@@ -116,10 +115,9 @@ def extract_access_db(file_path, run_id):
     
     if platform.system() != "Windows":
         try:
-            # Added timeout to prevent watchdog freeze
             tables_out = subprocess.run(["mdb-tables", "-1", str(file_path)], capture_output=True, text=True, check=True, timeout=60)
-            # Split by line to handle table names with whitespaces
-            tables = sorted([t.strip() for t in tables_out.stdout.splitlines() if t.strip()])
+            # FIX 1: Preserving whitespace verbatim, only dropping truly empty newlines
+            tables = sorted([t for t in tables_out.stdout.splitlines() if len(t) > 0])
             extracted_tables = [{"table_name": t, "status": "Schema Extracted via mdbtools"} for t in tables]
             with open(output_file, "w") as json_file:
                 json.dump(extracted_tables, json_file, indent=4)
@@ -146,12 +144,13 @@ def extract_access_db(file_path, run_id):
                 json.dump(extracted_tables, json_file, indent=4)
             return [output_file]
         except pyodbc.Error as e:
-            error_msg = str(e).lower()
-            # Distinguish Access password errors from exclusive locks
-            if "password" in error_msg or "not a valid password" in error_msg:
+            # FIX 2: Proper Driver-Specific Diagnostics using e.args tuple
+            err_text = str(e.args[1]).lower() if len(e.args) > 1 else str(e).lower()
+            
+            if "password" in err_text or "not a valid password" in err_text:
                 raise PermissionError("Access Database is password protected.")
-            elif "exclusive" in error_msg or "in use" in error_msg:
+            elif "exclusive" in err_text or "in use" in err_text:
                 raise RuntimeError("Access Database is exclusively locked by another process.")
-            raise ValueError(f"Database connection failed: {error_msg}")
+            raise ValueError(f"Database connection failed: {err_text}")
         except Exception as e:
             raise RuntimeError(f"Access extraction failed: {str(e)}")
