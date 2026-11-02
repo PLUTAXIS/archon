@@ -57,8 +57,8 @@ def test_positive_running_balance() -> None:
 
 
 def test_negative_plain_sum() -> None:
-    """A plain SUM matches neither the tiered nor running balance idiom."""
-    result = match_formula("n3", "B1", parse_mock_formula("=SUM(A1:A10)"))
+    """An unsupported MEDIAN matches neither the tiered nor running balance idiom."""
+    result = match_formula("n3", "B1", parse_mock_formula("=MEDIAN(A1:A10)"))
     _assert_unverified(result, "n3")
 
 
