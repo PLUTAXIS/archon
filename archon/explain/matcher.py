@@ -22,6 +22,7 @@ from archon.explain.formula_ast import (
     Range,
     Ref,
     prior_row_address,
+    to_formula_text,
 )
 from archon.explain.lexicon import load_lexicon
 
@@ -138,6 +139,10 @@ def _arg_text(node: Node, kind: str) -> str | None:
         return node.text
     if kind == "int" and isinstance(node, Num) and node.text.isdigit():
         return node.text
+    if kind == "expr":
+        return to_formula_text(node)
+    if kind == "leaf" and isinstance(node, Num | Ref):
+        return to_formula_text(node)
     if kind == "range" and isinstance(node, Range):
         return f"{node.start}:{node.end}"
     return None

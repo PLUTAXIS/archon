@@ -174,3 +174,22 @@ class _Parser:
 def parse_mock_formula(formula: str) -> Node:
     """Parse a formula string such as '=D1+B2-C2' into an AST."""
     return _Parser(formula).parse()
+
+
+def _operand(node: Node) -> str:
+    """Text of a binary operand; nested binary operations get parentheses."""
+    text = to_formula_text(node)
+    return f"({text})" if isinstance(node, BinOp) else text
+
+
+def to_formula_text(node: Node) -> str:
+    """Canonical, deterministic text for a node (no whitespace, upper-case refs)."""
+    if isinstance(node, Num):
+        return node.text
+    if isinstance(node, Ref):
+        return node.address
+    if isinstance(node, Range):
+        return f"{node.start}:{node.end}"
+    if isinstance(node, BinOp):
+        return f"{_operand(node.left)}{node.op}{_operand(node.right)}"
+    return f"{node.name}({','.join(to_formula_text(a) for a in node.args)})"
