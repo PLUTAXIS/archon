@@ -23,6 +23,7 @@ from archon.explain.formula_ast import (
     Ref,
     prior_row_address,
 )
+from archon.explain.lexicon import load_lexicon
 
 PATTERN_DIR = Path(__file__).parent / "patterns"
 COMPARE_OPS = ("<", "<=", ">", ">=", "=", "<>")
@@ -176,8 +177,14 @@ def _render(spec: Spec, captured: Captured) -> str:
     return spec["template"].format(**context)
 
 
-def match_formula(node_id: str, cell_address: str, tree: Node) -> ExplanationRecord:
+def match_formula(
+    node_id: str,
+    cell_address: str,
+    tree: Node,
+    header: str | None = None,
+) -> ExplanationRecord:
     """Explain a formula, or return an unverified record. Never guesses."""
+    res = load_lexicon().resolve(header) if header else None
     for spec in load_patterns():
         captured = SHAPES[spec["shape"]](tree, cell_address, spec)
         if captured is not None:
@@ -189,7 +196,8 @@ def match_formula(node_id: str, cell_address: str, tree: Node) -> ExplanationRec
                 evidence=Evidence(
                     pattern_id=spec["id"],
                     captured_vars=captured,
-                    header_resolved=False,
+                    header_resolved=res.resolved if res else False,
+                    header_terms=list(res.terms) if res else [],
                 ),
                 confidence=1.0,
             )
