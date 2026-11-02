@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+      - name: Install (Python 3.12, locked)
+        run: uv sync --locked --python 3.12
+      - name: Lint (owned code only)
+        run: uv run ruff check archon/contracts archon/explain tests/contracts tests/explain
+      - name: Types
+        run: uv run mypy --strict archon/contracts
+      - name: Tests (contracts + explain, includes determinism tests)
+        run: uv run pytest tests/contracts tests/explain -q
