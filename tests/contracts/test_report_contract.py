@@ -18,13 +18,15 @@ def _entry(status: str = "matched", text: str | None = "Sum.") -> dict:
     }
 
 
-def _section(sid: str, kind: str, entries: list[dict]) -> dict:
+def _section(
+    sid: str, kind: str, entries: list[dict], children: list[dict] | None = None
+) -> dict:
     return {
         "section_id": sid,
         "kind": kind,
         "title": sid,
         "entries": entries,
-        "children": [],
+        "children": children or [],
     }
 
 
@@ -104,3 +106,31 @@ def test_extra_field_forbidden() -> None:
 def test_sections_has_no_default() -> None:
     with pytest.raises(ValidationError):
         ReportDocument.model_validate({"schema_version": "1.0", "workbook_id": WB})
+
+
+def test_nested_duplicate_section_id_rejected() -> None:
+    child = _section("s1", "risk", [])
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _doc([_section("s1", "explanations", [], [child]), _appendix()])
+        )
+
+
+def test_nested_duplicate_of_other_top_level_rejected() -> None:
+    child = _section("s2", "risk", [])
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _doc(
+                [
+                    _section("s1", "explanations", [], [child]),
+                    _section("s2", "bugs", []),
+                    _appendix(),
+                ]
+            )
+        )
+
+
+def test_non_v4_workbook_id_accepted() -> None:
+    data = _doc([_appendix()])
+    data["workbook_id"] = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+    ReportDocument.model_validate(data)

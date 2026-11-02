@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import UUID4, BaseModel, Field, model_validator
+from pydantic import UUID, BaseModel, Field, model_validator
 
 SectionKind = Literal["summary", "explanations", "risk", "bugs", "unverified_appendix"]
 
@@ -52,7 +52,7 @@ def _walk(sections: list[ReportSection]) -> list[ReportSection]:
 class ReportDocument(BaseModel):
     model_config = {"extra": "forbid"}
     schema_version: Literal["1.0"]
-    workbook_id: UUID4
+    workbook_id: UUID
     sections: list[ReportSection]  # no default: explicit, like `exceptions`
 
     @model_validator(mode="after")
