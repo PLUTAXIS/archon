@@ -135,6 +135,8 @@ def _arg_text(node: Node, kind: str) -> str | None:
         return node.address
     if kind == "num" and isinstance(node, Num):
         return node.text
+    if kind == "int" and isinstance(node, Num) and node.text.isdigit():
+        return node.text
     if kind == "range" and isinstance(node, Range):
         return f"{node.start}:{node.end}"
     return None
