@@ -1,0 +1,12 @@
+[
+    {
+        "name": "Main",
+        "id": "1",
+        "state": "visible"
+    },
+    {
+        "name": "Secret",
+        "id": "2",
+        "state": "hidden"
+    }
+]
