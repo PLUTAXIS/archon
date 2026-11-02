@@ -1,0 +1,29 @@
+{
+  "certificate_id": "123e4567-e89b-12d3-a456-426614174000",
+  "workbook_id": "123e4567-e89b-12d3-a456-426614174001",
+  "generated_at": "2026-11-14T09:00:00Z",
+  "harness_version": "parity/2.1.0",
+  "cases_total": 1,
+  "cases_passed": 1,
+  "match_rate": "100.00",
+  "tolerance_policy": {
+    "float_relative": 1e-9,
+    "date_mode": "serial_1900_with_leap_bug",
+    "rounding": "excel_half_up_15_sig_digits",
+    "empty_cell": "zero_in_arithmetic_blank_in_concat"
+  },
+  "case_results": [
+    {
+      "case_id": 1,
+      "inputs": {},
+      "excel": 1234.56,
+      "python": 1234.56,
+      "delta": 0.0
+    }
+  ],
+  "signature": {
+    "alg": "ed25519",
+    "pubkey": "abc123",
+    "sig": "def456"
+  }
+}

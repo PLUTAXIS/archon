@@ -13,3 +13,4 @@ For_Senpai/
 # FIX: Narrowed ignores (pehle global *.json tha)
 extracted_*.json
 vba_module_*.txt
+dist/

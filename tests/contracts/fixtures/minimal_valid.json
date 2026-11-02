@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "workbook_id": "123e4567-e89b-12d3-a456-426614174000",
+  "source": {
+    "filename": "test.xlsx",
+    "sha256": "abc123",
+    "format": "xlsx",
+    "bytes": 1024
+  },
+  "sheets": [
+    {
+      "name": "Sheet1",
+      "index": 0,
+      "visibility": "visible",
+      "dimensions": "A1:B2"
+    }
+  ],
+  "cells": [
+    {
+      "sheet": "Sheet1",
+      "address": "A1",
+      "row": 1,
+      "col": 1,
+      "formula": "=B1+1",
+      "cached_value": 5,
+      "data_type": "n"
+    }
+  ],
+  "exceptions": []
+}
