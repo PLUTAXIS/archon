@@ -52,7 +52,9 @@ def test_appendix_is_required() -> None:
 
 def test_appendix_exactly_once() -> None:
     with pytest.raises(ValidationError):
-        ReportDocument.model_validate(_doc([_appendix(), _section("a2", "unverified_appendix", [])]))
+        ReportDocument.model_validate(
+            _doc([_appendix(), _section("a2", "unverified_appendix", [])])
+        )
 
 
 def test_appendix_only_unverified() -> None:
@@ -63,7 +65,13 @@ def test_appendix_only_unverified() -> None:
 def test_duplicate_section_ids_rejected() -> None:
     with pytest.raises(ValidationError):
         ReportDocument.model_validate(
-            _doc([_section("s1", "explanations", []), _section("s1", "risk", []), _appendix()])
+            _doc(
+                [
+                    _section("s1", "explanations", []),
+                    _section("s1", "risk", []),
+                    _appendix(),
+                ]
+            )
         )
 
 
@@ -77,7 +85,12 @@ def test_matched_entry_needs_text() -> None:
 def test_unverified_entry_has_no_text() -> None:
     with pytest.raises(ValidationError):
         ReportDocument.model_validate(
-            _doc([_section("s1", "explanations", [_entry("unverified", "x")]), _appendix()])
+            _doc(
+                [
+                    _section("s1", "explanations", [_entry("unverified", "x")]),
+                    _appendix(),
+                ]
+            )
         )
 
 
@@ -90,6 +103,4 @@ def test_extra_field_forbidden() -> None:
 
 def test_sections_has_no_default() -> None:
     with pytest.raises(ValidationError):
-        ReportDocument.model_validate(
-            {"schema_version": "1.0", "workbook_id": WB}
-        )
+        ReportDocument.model_validate({"schema_version": "1.0", "workbook_id": WB})
