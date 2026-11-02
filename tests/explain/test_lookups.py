@@ -101,6 +101,7 @@ def test_negative_index_without_match() -> None:
 
 
 def test_determinism_lookups() -> None:
+    """Same formulas, run 20x, must produce byte-identical JSON output."""
     cases = [
         ("=VLOOKUP(A2,F1:H20,3,0)", "D2"),
         ("=VLOOKUP(A2,F1:H20,3)", "D2"),
