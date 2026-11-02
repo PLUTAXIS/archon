@@ -1,8 +1,9 @@
 """Contract F: report section tree (composer -> Deepsikha's previewer)."""
 
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
-from pydantic import UUID, BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 SectionKind = Literal["summary", "explanations", "risk", "bugs", "unverified_appendix"]
 
