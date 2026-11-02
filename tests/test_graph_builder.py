@@ -7,7 +7,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import graph_builder as gb  # noqa: E402
+from archon.graph import graph_builder as gb  # noqa: E402
 
 SAMPLE = os.path.join(ROOT, "samples", "sample_input.json")
 
