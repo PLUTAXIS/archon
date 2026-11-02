@@ -14,7 +14,15 @@ from typing import Any
 import yaml
 
 from archon.contracts.explain import Evidence, ExplanationRecord
-from archon.explain.formula_ast import BinOp, Call, Node, Num, Ref, prior_row_address
+from archon.explain.formula_ast import (
+    BinOp,
+    Call,
+    Node,
+    Num,
+    Range,
+    Ref,
+    prior_row_address,
+)
 
 PATTERN_DIR = Path(__file__).parent / "patterns"
 COMPARE_OPS = ("<", "<=", ">", ">=", "=", "<>")
@@ -28,7 +36,7 @@ def load_patterns() -> tuple[Spec, ...]:
     specs: list[Spec] = []
     for path in sorted(PATTERN_DIR.glob("*.yaml")):
         specs.extend(yaml.safe_load(path.read_text(encoding="utf-8"))["patterns"])
-    return tuple(sorted(specs, key=lambda spec: spec["id"]))
+    return tuple(sorted(specs, key=lambda spec: (spec.get("priority", 50), spec["id"])))
 
 
 def _leaf_text(node: Node) -> str | None:
@@ -108,9 +116,55 @@ def _match_chain(tree: Node, cell_address: str, spec: Spec) -> Captured | None:
     }
 
 
+def _match_binary(tree: Node, _cell: str, spec: Spec) -> Captured | None:
+    """Exactly two cell references joined by the pattern's operator."""
+    if not (
+        isinstance(tree, BinOp)
+        and tree.op == spec["op"]
+        and isinstance(tree.left, Ref)
+        and isinstance(tree.right, Ref)
+    ):
+        return None
+    first, second = spec["captures"]
+    return {first: tree.left.address, second: tree.right.address}
+
+
+def _arg_text(node: Node, kind: str) -> str | None:
+    """Text of an argument if it has the wanted kind (ref, num, range)."""
+    if kind == "ref" and isinstance(node, Ref):
+        return node.address
+    if kind == "num" and isinstance(node, Num):
+        return node.text
+    if kind == "int" and isinstance(node, Num) and node.text.isdigit():
+        return node.text
+    if kind == "range" and isinstance(node, Range):
+        return f"{node.start}:{node.end}"
+    return None
+
+
+def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
+    """A call to one function whose arguments have exactly the listed kinds."""
+    wanted = spec["args"]
+    if not (
+        isinstance(tree, Call)
+        and tree.name == spec["function"]
+        and len(tree.args) == len(wanted)
+    ):
+        return None
+    captured: Captured = {}
+    for arg, want in zip(tree.args, wanted, strict=True):
+        text = _arg_text(arg, want["kind"])
+        if text is None:
+            return None
+        captured[want["as"]] = text
+    return captured
+
+
 SHAPES: dict[str, Callable[[Node, str, Spec], Captured | None]] = {
     "if_ladder": _match_ladder,
     "additive_chain": _match_chain,
+    "binary_refs": _match_binary,
+    "call_args": _match_call,
 }
 
 
