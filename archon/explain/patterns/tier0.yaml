@@ -1,5 +1,6 @@
 patterns:
   - id: running_balance
+    priority: 10
     idiom: running_balance
     shape: additive_chain
     template: "Running balance from {prior_row}{added_clause}{subtracted_clause}."
@@ -7,6 +8,7 @@ patterns:
       added: ", adding {added}"
       subtracted: ", subtracting {subtracted}"
   - id: tiered_rate_table
+    priority: 10
     idiom: tiered_rate_table
     shape: if_ladder
     function: IF

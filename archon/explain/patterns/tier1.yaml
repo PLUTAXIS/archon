@@ -1,0 +1,34 @@
+patterns:
+  - id: product
+    idiom: product
+    shape: binary_refs
+    op: "*"
+    captures: [left, right]
+    template: "Product of {left} and {right}."
+  - id: ratio
+    idiom: ratio
+    shape: binary_refs
+    op: "/"
+    captures: [numerator, denominator]
+    template: "Ratio of {numerator} to {denominator}."
+  - id: difference
+    idiom: difference
+    shape: binary_refs
+    op: "-"
+    captures: [minuend, subtrahend]
+    template: "Difference of {minuend} minus {subtrahend}."
+  - id: sum
+    idiom: sum
+    shape: call_args
+    function: SUM
+    args:
+      - {kind: range, as: range}
+    template: "Sum of {range}."
+  - id: rounding
+    idiom: rounding
+    shape: call_args
+    function: ROUND
+    args:
+      - {kind: ref, as: value}
+      - {kind: num, as: digits}
+    template: "{value} rounded to {digits} decimal places."
