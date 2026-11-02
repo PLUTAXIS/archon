@@ -193,7 +193,14 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V7.1 (Docs Applied): 100% Docstring Coverage achieved.")
+    print(f"[*] V7.2 (Reconciliation Applied): Processing pre-existing files.")
+    
+    # NEW FIX: Reconcile existing files that were dropped before the observer started
+    for filename in os.listdir(dropzone_path):
+        filepath = os.path.join(dropzone_path, filename)
+        if os.path.isfile(filepath) and filepath.endswith(('.xlsx', '.xlsm', '.accdb')):
+            print(f"[*] Reconciling existing file found in dropzone: {filename}")
+            process_file(filepath)
     
     try:
         while True:
