@@ -1,9 +1,8 @@
 """Tests for the deterministic formula pattern matcher (Day 2)."""
 
+from archon.contracts.explain import ExplanationRecord
 from archon.explain.formula_ast import parse_mock_formula
 from archon.explain.matcher import match_formula
-
-from archon.contracts.explain import ExplanationRecord
 
 TIERED = "=IF(B2<1000,0.05,IF(B2<5000,0.08,IF(B2<10000,0.12,0.15)))"
 BRACKETS = "1000:0.05|5000:0.08|10000:0.12|default:0.15"
