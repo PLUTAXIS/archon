@@ -111,3 +111,7 @@ def test_determinism_all_tier1() -> None:
     first = [_run("x", c, f).model_dump_json() for f, c in cases]
     for _ in range(20):
         assert [_run("x", c, f).model_dump_json() for f, c in cases] == first
+
+
+def test_negative_round_fractional_digits() -> None:
+    _assert_unverified(_run("n7", "C2", "=ROUND(B2,1.5)"), "n7")

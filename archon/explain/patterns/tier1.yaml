@@ -30,5 +30,5 @@ patterns:
     function: ROUND
     args:
       - {kind: ref, as: value}
-      - {kind: num, as: digits}
+      - {kind: int, as: digits}
     template: "{value} rounded to {digits} decimal places."
