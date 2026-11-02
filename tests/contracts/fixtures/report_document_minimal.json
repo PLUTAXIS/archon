@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "workbook_id": "5b0f1c1e-8f4e-4c55-9d0e-3c1b2a7d9e11",
+  "sections": [
+    {
+      "section_id": "explanations",
+      "kind": "explanations",
+      "title": "Explanations",
+      "entries": [
+        {
+          "node_id": "Revenue!R1C7#c17",
+          "status": "matched",
+          "plain_english": "Multiplies E by F.",
+          "risk_score": 0,
+          "risk_flags": []
+        }
+      ],
+      "children": []
+    },
+    {
+      "section_id": "unverified_appendix",
+      "kind": "unverified_appendix",
+      "title": "Unverified formulas",
+      "entries": [
+        {
+          "node_id": "Revenue!R1C9#c18",
+          "status": "unverified",
+          "plain_english": null,
+          "risk_score": 20,
+          "risk_flags": ["UNVERIFIED_FORMULA"]
+        }
+      ],
+      "children": []
+    }
+  ]
+}

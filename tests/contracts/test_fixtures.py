@@ -8,6 +8,7 @@ from archon.contracts.explain import ExplanationRecord
 from archon.contracts.extract import RawExtract
 from archon.contracts.graph import DagGraph
 from archon.contracts.parity import ParityCertificate
+from archon.contracts.report import ReportDocument
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -17,6 +18,7 @@ PREFIX_TO_MODEL = [
     ("dag_graph", DagGraph),
     ("bug_ledger", BugLedgerEntry),
     ("parity_certificate", ParityCertificate),
+    ("report_document", ReportDocument),
     ("explanation_matched", ExplanationRecord),
     ("explanation_unverified", ExplanationRecord),
     ("minimal_valid", RawExtract),
