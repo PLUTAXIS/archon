@@ -1,0 +1,27 @@
+patterns:
+  - id: error_suppression
+    idiom: error_suppression
+    shape: call_args
+    function: IFERROR
+    args:
+      - {kind: expr, as: expression}
+      - {kind: leaf, as: fallback}
+    template: "Evaluates {expression} and replaces any error with {fallback}."
+  - id: volatile_now
+    idiom: volatile_function
+    shape: call_args
+    function: NOW
+    args: []
+    template: "Current date and time; recalculates on every change."
+  - id: volatile_today
+    idiom: volatile_function
+    shape: call_args
+    function: TODAY
+    args: []
+    template: "Today's date; recalculates on every change."
+  - id: volatile_rand
+    idiom: volatile_function
+    shape: call_args
+    function: RAND
+    args: []
+    template: "Random number between 0 and 1; recalculates on every change."
