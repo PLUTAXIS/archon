@@ -3,6 +3,7 @@ patterns:
     idiom: lookup
     shape: call_args
     function: VLOOKUP
+    validate: [column_in_table]
     args:
       - {kind: ref, as: key}
       - {kind: range, as: table}
@@ -13,6 +14,7 @@ patterns:
     idiom: lookup
     shape: call_args
     function: VLOOKUP
+    validate: [column_in_table]
     args:
       - {kind: ref, as: key}
       - {kind: range, as: table}
@@ -23,6 +25,7 @@ patterns:
     idiom: lookup
     shape: call_args
     function: VLOOKUP
+    validate: [column_in_table]
     args:
       - {kind: ref, as: key}
       - {kind: range, as: table}
@@ -32,6 +35,7 @@ patterns:
     idiom: lookup
     shape: call_args
     function: INDEX
+    validate: [index_match_geometry]
     args:
       - {kind: range, as: result_range}
       - kind: call
