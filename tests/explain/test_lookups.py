@@ -91,3 +91,30 @@ def test_index_match_approximate_is_unverified() -> None:
 
 def test_index_without_match_is_unverified() -> None:
     assert _run("=INDEX(C1:C20,3)").status == "unverified"
+
+
+def test_vlookup_column_zero_is_unverified() -> None:
+    assert _run("=VLOOKUP(A2,F1:H20,0,0)").status == "unverified"
+
+
+def test_vlookup_column_beyond_table_is_unverified() -> None:
+    assert _run("=VLOOKUP(A2,F1:H20,4,0)").status == "unverified"
+    assert _run("=VLOOKUP(A2,F1:H20,4)").status == "unverified"
+    assert _run("=VLOOKUP(A2,F1:H20,4,1)").status == "unverified"
+
+
+def test_vlookup_column_at_table_edges_matches() -> None:
+    assert _run("=VLOOKUP(A2,F1:H20,1,0)").status == "matched"
+    assert _run("=VLOOKUP(A2,F1:H20,3,0)").status == "matched"
+
+
+def test_index_match_multi_column_result_is_unverified() -> None:
+    assert _run("=INDEX(C1:D20,MATCH(A2,B1:B20,0))").status == "unverified"
+
+
+def test_index_match_multi_column_lookup_is_unverified() -> None:
+    assert _run("=INDEX(C1:C20,MATCH(A2,B1:C20,0))").status == "unverified"
+
+
+def test_index_match_result_shorter_than_lookup_is_unverified() -> None:
+    assert _run("=INDEX(C1:C10,MATCH(A2,B1:B20,0))").status == "unverified"
