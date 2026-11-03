@@ -117,3 +117,15 @@ def test_determinism() -> None:
         assert again == first
         assert to_contract_risk(again).model_dump_json() == first_json
     json.loads(first_json)
+
+
+def test_lookup_risk_flags() -> None:
+    cases = {
+        "=VLOOKUP(A2,F1:H20,3)": (25, ("APPROX_LOOKUP_DEFAULT",)),
+        "=VLOOKUP(A2,F1:H20,3,1)": (10, ("APPROX_LOOKUP",)),
+        "=VLOOKUP(A2,F1:H20,3,0)": (0, ()),
+        "=INDEX(C1:C20,MATCH(A2,B1:B20,0))": (0, ()),
+    }
+    for formula, (score, flags) in cases.items():
+        r = _score(formula, cell="D2")
+        assert (r.score, r.flags) == (score, flags)
