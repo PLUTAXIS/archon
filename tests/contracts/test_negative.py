@@ -82,7 +82,7 @@ def test_matched_record_without_text_rejected() -> None:
 
     from archon.contracts.explain import ExplanationRecord
 
-    for text in (None, ""):
+    for text in (None, "", "   "):
         with pytest.raises(ValidationError):
             ExplanationRecord(
                 node_id="n1",

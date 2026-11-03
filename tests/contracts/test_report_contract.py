@@ -134,3 +134,10 @@ def test_non_v4_workbook_id_accepted() -> None:
     data = _doc([_appendix()])
     data["workbook_id"] = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
     ReportDocument.model_validate(data)
+
+
+def test_matched_entry_whitespace_text_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _doc([_section("s1", "explanations", [_entry(text="   ")]), _appendix()])
+        )
