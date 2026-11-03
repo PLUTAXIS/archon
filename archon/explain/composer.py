@@ -1,6 +1,7 @@
 """Composer: explanation records -> Contract F section tree (deterministic)."""
 
 from collections.abc import Iterable
+from itertools import pairwise
 from uuid import UUID
 
 from archon.contracts.explain import ExplanationRecord
@@ -23,7 +24,7 @@ def compose_report(
 ) -> ReportDocument:
     ordered = sorted(records, key=lambda r: r.node_id)
     ids = [r.node_id for r in ordered]
-    for first, second in zip(ids, ids[1:], strict=False):
+    for first, second in pairwise(ids):
         if first == second:
             raise ValueError(f"duplicate node_id: {first}")
 
