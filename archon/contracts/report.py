@@ -25,6 +25,14 @@ class ReportEntry(BaseModel):
         return self
 
 
+class UnmatchedShape(BaseModel):
+    """One formula shape the engine could not explain, with its frequency."""
+
+    model_config = {"extra": "forbid", "frozen": True}
+    shape: Annotated[str, Field(min_length=1)]
+    count: Annotated[int, Field(ge=1)]
+
+
 class ReportSection(BaseModel):
     model_config = {"extra": "forbid", "frozen": True}
     section_id: str
@@ -55,6 +63,7 @@ class ReportDocument(BaseModel):
     schema_version: Literal["1.0"]
     workbook_id: UUID
     sections: list[ReportSection]  # no default: explicit, like `exceptions`
+    unmatched_shapes: list[UnmatchedShape]  # no default; [] is an explicit claim
 
     @model_validator(mode="after")
     def structure_rules(self) -> Self:
@@ -65,4 +74,13 @@ class ReportDocument(BaseModel):
         appendices = [s for s in everything if s.kind == "unverified_appendix"]
         if len(appendices) != 1:
             raise ValueError("exactly one unverified_appendix is required")
+        shapes = [u.shape for u in self.unmatched_shapes]
+        if len(shapes) != len(set(shapes)):
+            raise ValueError("duplicate shape in unmatched_shapes")
+        keys = [(-u.count, u.shape) for u in self.unmatched_shapes]
+        if keys != sorted(keys):
+            raise ValueError(
+                "unmatched_shapes must be ranked by count descending, "
+                "then shape ascending"
+            )
         return self
