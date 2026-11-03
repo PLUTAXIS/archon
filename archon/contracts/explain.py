@@ -51,4 +51,6 @@ class ExplanationRecord(BaseModel):
             )
         if self.status == "matched" and self.idiom is None:
             raise ValueError("matched records must have an idiom set")
+        if self.status == "matched" and not self.plain_english:
+            raise ValueError("matched records must have non-empty plain_english")
         return self

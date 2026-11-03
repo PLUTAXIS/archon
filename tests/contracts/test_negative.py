@@ -74,3 +74,20 @@ def test_match_rate_rounds_half_up() -> None:
     data["case_results"] = []
     data["cases_total"], data["cases_passed"], data["match_rate"] = 32, 1, "3.13"
     ParityCertificate.model_validate(data)
+
+
+def test_matched_record_without_text_rejected() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from archon.contracts.explain import ExplanationRecord
+
+    for text in (None, ""):
+        with pytest.raises(ValidationError):
+            ExplanationRecord(
+                node_id="n1",
+                status="matched",
+                idiom="sum",
+                plain_english=text,
+                confidence=1.0,
+            )

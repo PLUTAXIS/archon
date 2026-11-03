@@ -10,6 +10,7 @@ from archon.explain.risk import RiskResult, score_record
 
 
 def _entry(record: ExplanationRecord, risk: RiskResult) -> ReportEntry:
+    """Build one report entry from a record and its risk result."""
     return ReportEntry(
         node_id=record.node_id,
         status=record.status,
@@ -22,6 +23,12 @@ def _entry(record: ExplanationRecord, risk: RiskResult) -> ReportEntry:
 def compose_report(
     workbook_id: UUID, records: Iterable[ExplanationRecord]
 ) -> ReportDocument:
+    """Compose records into a deterministic three-section report.
+
+    Sections: explanations (matched), risk (score > 0, highest first),
+    unverified appendix. Input order never affects output. Raises
+    ValueError on duplicate node ids.
+    """
     ordered = sorted(records, key=lambda r: r.node_id)
     ids = [r.node_id for r in ordered]
     for first, second in pairwise(ids):
