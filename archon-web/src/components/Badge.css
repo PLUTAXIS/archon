@@ -1,0 +1,22 @@
+.badge {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.badge-high {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.badge-medium {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-low {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
