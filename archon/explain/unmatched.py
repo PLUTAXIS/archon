@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from archon.explain.formula_ast import BinOp, Call, Node, Num, Range, Ref
+from archon.explain.formula_ast import BinOp, Node, Num, Range, Ref
 from archon.explain.matcher import match_formula
 
 
