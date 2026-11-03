@@ -42,3 +42,18 @@ def test_unknown_header_stays_unresolved() -> None:
 
 def test_vocabulary_loads_without_collisions() -> None:
     assert load_lexicon().resolve("gross profit").resolved is True
+
+
+@pytest.mark.parametrize(
+    ("header", "phrase"),
+    [
+        ("Amort", "amortization"),
+        ("Adj_Revenue", "adjusted revenue"),
+        ("Admin_Expense", "administrative expense"),
+        ("Dividend", "dividend"),
+    ],
+)
+def test_new_aliases_resolve(header: str, phrase: str) -> None:
+    result = load_lexicon().resolve(header)
+    assert result.resolved is True
+    assert result.phrase == phrase
