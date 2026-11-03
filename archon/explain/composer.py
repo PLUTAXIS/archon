@@ -5,8 +5,14 @@ from itertools import pairwise
 from uuid import UUID
 
 from archon.contracts.explain import ExplanationRecord
-from archon.contracts.report import ReportDocument, ReportEntry, ReportSection
+from archon.contracts.report import (
+    ReportDocument,
+    ReportEntry,
+    ReportSection,
+    UnmatchedShape,
+)
 from archon.explain.risk import RiskResult, score_record
+from archon.explain.unmatched import ShapeCount
 
 
 def _entry(record: ExplanationRecord, risk: RiskResult) -> ReportEntry:
@@ -21,7 +27,10 @@ def _entry(record: ExplanationRecord, risk: RiskResult) -> ReportEntry:
 
 
 def compose_report(
-    workbook_id: UUID, records: Iterable[ExplanationRecord]
+    workbook_id: UUID,
+    records: Iterable[ExplanationRecord],
+    *,
+    unmatched_shapes: Iterable[ShapeCount] = (),
 ) -> ReportDocument:
     """Compose records into a deterministic three-section report.
 
@@ -35,6 +44,11 @@ def compose_report(
         if first == second:
             raise ValueError(f"duplicate node_id: {first}")
 
+    ranked = sorted(unmatched_shapes, key=lambda u: (-u.count, u.shape))
+    seen = [u.shape for u in ranked]
+    if len(seen) != len(set(seen)):
+        raise ValueError("duplicate shape in unmatched_shapes")
+
     scored = [(r, score_record(r)) for r in ordered]
     explanations = [_entry(r, s) for r, s in scored if r.status == "matched"]
     appendix = [_entry(r, s) for r, s in scored if r.status == "unverified"]
@@ -46,6 +60,7 @@ def compose_report(
     return ReportDocument(
         schema_version="1.0",
         workbook_id=workbook_id,
+        unmatched_shapes=[UnmatchedShape(shape=u.shape, count=u.count) for u in ranked],
         sections=[
             ReportSection(
                 section_id="explanations",
