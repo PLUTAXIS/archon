@@ -148,8 +148,23 @@ def _arg_text(node: Node, kind: str) -> str | None:
     return None
 
 
+def _match_arg(node: Node, want: Spec) -> Captured | None:
+    """Match one argument against its spec; return its captures or None."""
+    kind = want["kind"]
+    if kind == "call":
+        return _match_call(node, "", want)
+    if kind == "lit":
+        if isinstance(node, Num) and node.text in want["values"]:
+            return {want["as"]: want["values"][node.text]}
+        return None
+    text = _arg_text(node, kind)
+    if text is None:
+        return None
+    return {want["as"]: text}
+
+
 def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
-    """A call to one function whose arguments have exactly the listed kinds."""
+    """A call to one function whose arguments match the listed specs."""
     wanted = spec["args"]
     if not (
         isinstance(tree, Call)
@@ -159,10 +174,10 @@ def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
         return None
     captured: Captured = {}
     for arg, want in zip(tree.args, wanted, strict=True):
-        text = _arg_text(arg, want["kind"])
-        if text is None:
+        part = _match_arg(arg, want)
+        if part is None:
             return None
-        captured[want["as"]] = text
+        captured.update(part)
     return captured
 
 
