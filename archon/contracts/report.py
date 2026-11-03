@@ -18,7 +18,7 @@ class ReportEntry(BaseModel):
 
     @model_validator(mode="after")
     def text_must_match_status(self) -> Self:
-        if self.status == "matched" and not self.plain_english:
+        if self.status == "matched" and not (self.plain_english or "").strip():
             raise ValueError("matched entries must carry plain_english")
         if self.status == "unverified" and self.plain_english is not None:
             raise ValueError("unverified entries must not carry plain_english")
