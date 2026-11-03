@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from archon.scrubber import scrubber  # noqa: E402
 
-SCRIPT = os.path.join(ROOT, "scrubber.py")
+SCRIPT = os.path.join(ROOT, "archon", "scrubber", "scrubber.py")
 
 
 def script_text():
