@@ -31,7 +31,12 @@ def _section(
 
 
 def _doc(sections: list[dict]) -> dict:
-    return {"schema_version": "1.0", "workbook_id": WB, "sections": sections}
+    return {
+        "schema_version": "1.0",
+        "workbook_id": WB,
+        "sections": sections,
+        "unmatched_shapes": [],
+    }
 
 
 def _appendix(entries: list[dict] | None = None) -> dict:
@@ -140,4 +145,61 @@ def test_matched_entry_whitespace_text_rejected() -> None:
     with pytest.raises(ValidationError):
         ReportDocument.model_validate(
             _doc([_section("s1", "explanations", [_entry(text="   ")]), _appendix()])
+        )
+
+
+def _with_shapes(shapes: list[dict]) -> dict:
+    data = _doc([_appendix()])
+    data["unmatched_shapes"] = shapes
+    return data
+
+
+def test_unmatched_shapes_required() -> None:
+    data = _doc([_appendix()])
+    del data["unmatched_shapes"]
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(data)
+
+
+def test_unmatched_shapes_valid_ranking() -> None:
+    doc = ReportDocument.model_validate(
+        _with_shapes(
+            [
+                {"shape": "MEDIAN(<range>)", "count": 3},
+                {"shape": "MAX(<ref>,<ref>)", "count": 1},
+                {"shape": "MIN(<ref>,<ref>)", "count": 1},
+            ]
+        )
+    )
+    assert doc.unmatched_shapes[0].count == 3
+
+
+def test_unmatched_shape_count_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(_with_shapes([{"shape": "X()", "count": 0}]))
+
+
+def test_unmatched_shape_must_be_non_empty() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(_with_shapes([{"shape": "", "count": 1}]))
+
+
+def test_unmatched_shapes_wrong_order_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _with_shapes([{"shape": "A()", "count": 1}, {"shape": "B()", "count": 2}])
+        )
+
+
+def test_unmatched_shapes_tie_wrong_alphabet_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _with_shapes([{"shape": "B()", "count": 1}, {"shape": "A()", "count": 1}])
+        )
+
+
+def test_unmatched_shapes_duplicate_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ReportDocument.model_validate(
+            _with_shapes([{"shape": "A()", "count": 2}, {"shape": "A()", "count": 1}])
         )

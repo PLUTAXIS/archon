@@ -9,6 +9,7 @@ from archon.contracts.report import ReportDocument
 from archon.explain.composer import compose_report
 from archon.explain.formula_ast import parse_mock_formula
 from archon.explain.matcher import match_formula
+from archon.explain.unmatched import ShapeCount
 
 WB = UUID("5b0f1c1e-8f4e-4c55-9d0e-3c1b2a7d9e11")
 
@@ -105,3 +106,33 @@ def test_determinism() -> None:
     first = compose_report(WB, _records()).model_dump_json()
     for _ in range(20):
         assert compose_report(WB, _records()).model_dump_json() == first
+
+
+def test_unmatched_shapes_default_is_empty() -> None:
+    assert compose_report(WB, _records()).unmatched_shapes == []
+
+
+def test_unmatched_shapes_carried_and_ranked() -> None:
+    doc = compose_report(
+        WB,
+        _records(),
+        unmatched_shapes=[
+            ShapeCount("MIN(<ref>,<ref>)", 1),
+            ShapeCount("MEDIAN(<range>)", 3),
+            ShapeCount("MAX(<ref>,<ref>)", 1),
+        ],
+    )
+    assert [(s.shape, s.count) for s in doc.unmatched_shapes] == [
+        ("MEDIAN(<range>)", 3),
+        ("MAX(<ref>,<ref>)", 1),
+        ("MIN(<ref>,<ref>)", 1),
+    ]
+
+
+def test_unmatched_shapes_duplicate_rejected() -> None:
+    with pytest.raises(ValueError, match="duplicate shape"):
+        compose_report(
+            WB,
+            [],
+            unmatched_shapes=[ShapeCount("A()", 2), ShapeCount("A()", 1)],
+        )
