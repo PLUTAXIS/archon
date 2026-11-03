@@ -1,0 +1,43 @@
+patterns:
+  - id: vlookup_exact
+    idiom: lookup
+    shape: call_args
+    function: VLOOKUP
+    args:
+      - {kind: ref, as: key}
+      - {kind: range, as: table}
+      - {kind: int, as: column}
+      - {kind: lit, values: {"0": exact}, as: match}
+    template: "Looks up {key} in the first column of {table} and returns column {column} (exact match)."
+  - id: vlookup_approx
+    idiom: lookup
+    shape: call_args
+    function: VLOOKUP
+    args:
+      - {kind: ref, as: key}
+      - {kind: range, as: table}
+      - {kind: int, as: column}
+      - {kind: lit, values: {"1": approximate}, as: match}
+    template: "Looks up {key} in the first column of {table} and returns column {column} (approximate match)."
+  - id: vlookup_default
+    idiom: lookup
+    shape: call_args
+    function: VLOOKUP
+    args:
+      - {kind: ref, as: key}
+      - {kind: range, as: table}
+      - {kind: int, as: column}
+    template: "Looks up {key} in the first column of {table} and returns column {column} (approximate match, the default)."
+  - id: index_match_exact
+    idiom: lookup
+    shape: call_args
+    function: INDEX
+    args:
+      - {kind: range, as: result_range}
+      - kind: call
+        function: MATCH
+        args:
+          - {kind: ref, as: key}
+          - {kind: range, as: lookup_range}
+          - {kind: lit, values: {"0": exact}, as: match}
+    template: "Looks up {key} in {lookup_range} and returns the matching value from {result_range} (exact match)."
