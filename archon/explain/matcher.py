@@ -6,6 +6,7 @@ shapes are the only code. A new idiom of an existing shape is a data change.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator
 from functools import lru_cache
 from pathlib import Path
@@ -148,8 +149,70 @@ def _arg_text(node: Node, kind: str) -> str | None:
     return None
 
 
+_RANGE = re.compile(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$")
+
+
+def _col_number(letters: str) -> int:
+    """Spreadsheet column letters to a 1-based number (A=1, AA=27)."""
+    number = 0
+    for char in letters:
+        number = number * 26 + ord(char) - 64
+    return number
+
+
+def _range_dims(text: str) -> tuple[int, int] | None:
+    """(rows, columns) of a range such as F1:H20, or None if unreadable."""
+    found = _RANGE.match(text)
+    if found is None:
+        return None
+    col1, row1, col2, row2 = found.groups()
+    rows = abs(int(row2) - int(row1)) + 1
+    cols = abs(_col_number(col2) - _col_number(col1)) + 1
+    return rows, cols
+
+
+def _column_in_table(captured: Captured) -> bool:
+    """VLOOKUP's column index must lie within the table's width."""
+    dims = _range_dims(captured["table"])
+    return dims is not None and 1 <= int(captured["column"]) <= dims[1]
+
+
+def _index_match_geometry(captured: Captured) -> bool:
+    """INDEX-MATCH ranges must be single columns of equal height."""
+    result = _range_dims(captured["result_range"])
+    lookup = _range_dims(captured["lookup_range"])
+    return (
+        result is not None
+        and lookup is not None
+        and result[1] == 1
+        and lookup[1] == 1
+        and result[0] == lookup[0]
+    )
+
+
+VALIDATORS: dict[str, Callable[[Captured], bool]] = {
+    "column_in_table": _column_in_table,
+    "index_match_geometry": _index_match_geometry,
+}
+
+
+def _match_arg(node: Node, want: Spec) -> Captured | None:
+    """Match one argument against its spec; return its captures or None."""
+    kind = want["kind"]
+    if kind == "call":
+        return _match_call(node, "", want)
+    if kind == "lit":
+        if isinstance(node, Num) and node.text in want["values"]:
+            return {want["as"]: want["values"][node.text]}
+        return None
+    text = _arg_text(node, kind)
+    if text is None:
+        return None
+    return {want["as"]: text}
+
+
 def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
-    """A call to one function whose arguments have exactly the listed kinds."""
+    """A call to one function whose arguments match the listed specs."""
     wanted = spec["args"]
     if not (
         isinstance(tree, Call)
@@ -159,10 +222,13 @@ def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
         return None
     captured: Captured = {}
     for arg, want in zip(tree.args, wanted, strict=True):
-        text = _arg_text(arg, want["kind"])
-        if text is None:
+        part = _match_arg(arg, want)
+        if part is None:
             return None
-        captured[want["as"]] = text
+        captured.update(part)
+    for name in spec.get("validate", []):
+        if not VALIDATORS[name](captured):
+            return None
     return captured
 
 
