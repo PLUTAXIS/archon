@@ -7,14 +7,22 @@ from concurrent.futures import ThreadPoolExecutor
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# Ensure imports align with the new structure
 from archon.ingest.ingestion_core import parse_excel_workbook, extract_access_db
 from archon.contracts.extract import ExtractException
 
-# FIX 7: Set up ThreadPoolExecutor to prevent blocking the watchdog thread
 executor = ThreadPoolExecutor(max_workers=4)
 
 def wait_for_file_transfer(file_path, timeout=60):
+    """
+    Monitors a file to ensure it has completely finished transferring to the dropzone.
+    
+    Args:
+        file_path (str): The absolute or relative path to the file being monitored.
+        timeout (int): Maximum time in seconds to wait for the file size to stabilize.
+        
+    Returns:
+        bool: True if the file transfer is complete and stable, False if it times out or fails.
+    """
     historical_size = -1
     retries = 0
     while retries < timeout:
@@ -33,6 +41,15 @@ def wait_for_file_transfer(file_path, timeout=60):
     return False
 
 def route_deliverables(deliverable_path):
+    """
+    Routes the extracted JSON output files to designated downstream folders.
+    
+    Args:
+        deliverable_path (str): The path to the successfully generated extraction JSON file.
+        
+    Returns:
+        bool: True if the file was successfully copied and moved to downstream folders, False otherwise.
+    """
     mainak_folder = "For_Mainak"
     senpai_folder = "For_Senpai"
     try:
@@ -47,6 +64,12 @@ def route_deliverables(deliverable_path):
         return False
 
 def archive_original_file(file_path):
+    """
+    Moves the processed original client file into a secure archive directory with a timestamp.
+    
+    Args:
+        file_path (str): Path to the original source file to be archived.
+    """
     archive_folder = "Archive_Processed"
     base_name, ext = os.path.splitext(os.path.basename(file_path))
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -59,7 +82,11 @@ def archive_original_file(file_path):
 
 def process_file_task(file_path):
     """
-    Worker task that runs on a separate thread to keep observer unblocked.
+    Worker task that runs on a separate thread to process files without blocking the observer.
+    Handles extraction, error logging, and downstream routing.
+    
+    Args:
+        file_path (str): The path of the newly detected file in the dropzone.
     """
     if not wait_for_file_transfer(file_path):
         return
@@ -104,12 +131,27 @@ def process_file_task(file_path):
             print(f"[-] Execution cycle FAILED (Routing Error) for {os.path.basename(file_path)}.")
 
 class DropzoneHandler(FileSystemEventHandler):
+    """
+    Watchdog event handler that monitors directory state and triggers multi-threaded processing.
+    """
+    
     def on_created(self, event):
+        """
+        Triggered when a file or directory is created. Filters for targeted file extensions.
+        
+        Args:
+            event (FileSystemEvent): Event representing file or directory creation.
+        """
         if not event.is_directory and event.src_path.endswith(('.xlsx', '.xlsm', '.accdb')):
-            # FIX 7: Non-blocking thread submission
             executor.submit(process_file_task, event.src_path)
             
     def on_moved(self, event):
+        """
+        Triggered when a file or directory is moved or renamed. Filters for targeted file extensions.
+        
+        Args:
+            event (FileSystemEvent): Event representing file or directory movement.
+        """
         if not event.is_directory and event.dest_path.endswith(('.xlsx', '.xlsm', '.accdb')):
             executor.submit(process_file_task, event.dest_path)
 
