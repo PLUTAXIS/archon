@@ -11,7 +11,7 @@ terms:
   ebit: []
   ebitda: []
   tax: [taxes]
-  rate: []
+  rate: [rates]
   percent: [pct]
   discount: [disc]
   commission: [comm]
