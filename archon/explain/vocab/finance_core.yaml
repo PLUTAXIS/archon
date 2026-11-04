@@ -23,7 +23,7 @@ terms:
   amount: [amt]
   quantity: [qty]
   price: []
-  unit: []
+  unit: [units]
   balance: [bal]
   opening: [open]
   closing: [close]
