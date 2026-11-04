@@ -8,23 +8,43 @@ from openpyxl.utils.exceptions import InvalidFileException
 from oletools.olevba import VBA_Parser
 import msoffcrypto
 
-# FIX 1: Imported Contract A directly as demanded by Wrik
 from archon.contracts.extract import RawExtract, Cell, Sheet, ExtractException
 
 def is_password_protected(file_path):
-    """Checks if a Microsoft Office file is encrypted with a password."""
+    """
+    Checks if a Microsoft Office file is encrypted with a password.
+    
+    Args:
+        file_path (str): The absolute or relative path to the target file.
+        
+    Returns:
+        bool: True if the file is password protected, False otherwise.
+        
+    Raises:
+        ExtractException: If the file format is completely invalid or cannot be inspected.
+    """
     try:
         with open(file_path, "rb") as f:
             office_file = msoffcrypto.OfficeFile(f)
             return office_file.is_encrypted()
     except msoffcrypto.exceptions.InvalidFileException:
-        # FIX 2: Using Strict Contract Exception Codes
         raise ExtractException(code="E_CORRUPT_ZIP", detail="Malformed or unsupported file format.")
     except Exception as e:
         raise ExtractException(code="E_OLE_PARSE_FAILED", detail=f"Cannot securely inspect file: {str(e)}")
 
 def extract_vba_macros(file_path):
-    """Extracts embedded VBA macros from the Office file and generates verifiable metadata."""
+    """
+    Extracts embedded VBA macros from the Office file and generates verifiable metadata.
+    
+    Args:
+        file_path (str): The absolute or relative path to the Office file.
+        
+    Returns:
+        list: A list of dictionaries containing metadata (module name, sha256 hash, line count) for each VBA macro.
+        
+    Raises:
+        ExtractException: If macro extraction explicitly fails during parsing.
+    """
     metadata = []
     try:
         vba_parser = VBA_Parser(file_path)
@@ -44,7 +64,17 @@ def extract_vba_macros(file_path):
 def parse_excel_workbook(file_path, run_id):
     """
     Parses workbook into a unified Contract A RawExtract object.
-    Includes both formula and cached_value for Senpai parity.
+    Includes both formula and cached_value for Senpai parity to ensure accuracy.
+    
+    Args:
+        file_path (str): Path to the target Excel workbook.
+        run_id (str): Unique execution identifier for tracking the extraction process.
+        
+    Returns:
+        RawExtract: A fully validated Contract A Pydantic model containing all extracted workbook data.
+        
+    Raises:
+        ExtractException: If the file is password protected, corrupt, or fails parsing.
     """
     if is_password_protected(file_path):
         raise ExtractException(code="E_UNSUPPORTED_FEATURE", detail="Password protected file.")
@@ -53,9 +83,7 @@ def parse_excel_workbook(file_path, run_id):
         file_hash = hashlib.sha256(f.read()).hexdigest()
 
     try:
-        # FIX 5: Removed read_only=True for formulas to prevent Shared Formula collapse (the 10,000 dragged rows trap)
         wb_formulas = openpyxl.load_workbook(file_path, data_only=False)
-        # FIX 3: Second pass with data_only=True to strictly fetch cached_value
         wb_values = openpyxl.load_workbook(file_path, data_only=True)
         
         sheets_data = []
@@ -68,7 +96,6 @@ def parse_excel_workbook(file_path, run_id):
                 for cell_f, cell_v in zip(row_f, row_v):
                     formula_str = None
                     
-                    # FIX 4: Correctly extracting ArrayFormula using .text instead of str()
                     if isinstance(cell_f.value, ArrayFormula):
                         formula_str = cell_f.value.text
                     elif cell_f.data_type == 'f' or (isinstance(cell_f.value, str) and cell_f.value.startswith('=')):
@@ -94,7 +121,6 @@ def parse_excel_workbook(file_path, run_id):
 
         vba_metadata = extract_vba_macros(file_path)
 
-        # FIX 1: Returning a validated Contract A object (no ad-hoc dict arrays)
         return RawExtract(
             schema_version="1.0",
             workbook_id=run_id,
@@ -111,7 +137,17 @@ def parse_excel_workbook(file_path, run_id):
 
 def extract_access_db(file_path):
     """
-    Extracts table schemas from MS Access database.
+    Extracts table schemas from an MS Access database.
+    Uses mdbtools for Linux parity, with a pyodbc fallback for Windows local dev.
+    
+    Args:
+        file_path (str): Path to the target Access database file.
+        
+    Returns:
+        list: A list of dictionaries detailing table names and their respective columns.
+        
+    Raises:
+        ExtractException: If the database is password protected or connection fails.
     """
     extracted_tables = []
     if platform.system() != "Windows":
@@ -131,7 +167,6 @@ def extract_access_db(file_path):
             cursor = conn.cursor()
             tables = sorted([row.table_name for row in cursor.tables(tableType='TABLE')])
             for table in tables:
-                # FIX 6: Using cursor.columns() instead of loading entire table data into memory with SELECT *
                 cols = cursor.columns(table=table)
                 column_names = [col.column_name for col in cols]
                 extracted_tables.append({"table_name": table, "columns": column_names})
