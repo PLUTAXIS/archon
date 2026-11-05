@@ -1,19 +1,26 @@
-unverified:
-  flag: UNVERIFIED_FORMULA
-  points: 20
+# Risk weights (proposed, pending Wrik). Keyed by flag name.
 rules:
-  difference: {points: 0}
-  error_suppression: {flag: ERROR_SUPPRESSED, points: 15}
-  index_match_exact: {points: 0}
-  product: {points: 0}
-  ratio: {points: 0}
-  rounding: {points: 0}
-  running_balance: {flag: RUNNING_BALANCE, points: 5}
-  sum: {points: 0}
-  tiered_rate_table: {flag: NESTED_IF_DEPTH, points_per_level: 5}
-  vlookup_approx: {flag: APPROX_LOOKUP, points: 10}
-  vlookup_default: {flag: APPROX_LOOKUP_DEFAULT, points: 25}
-  vlookup_exact: {points: 0}
-  volatile_now: {flag: VOLATILE_FUNCTION, points: 15}
-  volatile_rand: {flag: VOLATILE_FUNCTION, points: 15}
-  volatile_today: {flag: VOLATILE_FUNCTION, points: 15}
+  UNVERIFIED_FORMULA: 20
+  VOLATILE_FUNCTION: 15
+  ERROR_SUPPRESSED: 15
+  APPROX_LOOKUP_DEFAULT: 25
+  APPROX_LOOKUP: 10
+  RUNNING_BALANCE: 5
+  NESTED_IF_DEPTH: 5  # per IF level
+# pattern id -> flag (null = explicit zero-risk decision)
+pattern_flags:
+  running_balance: RUNNING_BALANCE
+  tiered_rate_table: NESTED_IF_DEPTH
+  product: null
+  ratio: null
+  difference: null
+  sum: null
+  rounding: null
+  vlookup_exact: null
+  vlookup_approx: APPROX_LOOKUP
+  vlookup_default: APPROX_LOOKUP_DEFAULT
+  index_match_exact: null
+  error_suppression: ERROR_SUPPRESSED
+  volatile_now: VOLATILE_FUNCTION
+  volatile_today: VOLATILE_FUNCTION
+  volatile_rand: VOLATILE_FUNCTION

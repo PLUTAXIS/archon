@@ -1,84 +1,130 @@
-"""Deterministic risk score: every point is attributed to a named flag."""
+"""Risk scoring: pure function from ExplanationRecord to a printable score.
 
-from collections.abc import Iterable
+Rules live in risk_rules.yaml (data, not code). Deterministic: sorted,
+set-free, timestamp-free. Known limitation (accepted, option A): only the
+outermost idiom is scored; a volatile/approx-lookup call nested inside
+IFERROR is invisible to a record-only scorer.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from archon.contracts.explain import ExplanationRecord
 from archon.contracts.graph import Risk
 
-MAX_SCORE = 100
+_SCORE_CAP = 100
 _RULES_FILE = Path(__file__).parent / "risk_rules.yaml"
 
 
 @dataclass(frozen=True)
 class RiskComponent:
+    """A single named contribution to the risk score."""
+
     flag: str
     points: int
 
 
 @dataclass(frozen=True)
 class RiskResult:
+    """Score plus its printable, sorted breakdown."""
+
     score: int
     flags: tuple[str, ...]
     components: tuple[RiskComponent, ...]
 
 
 @lru_cache(maxsize=1)
-def _load() -> dict[str, Any]:
-    with _RULES_FILE.open(encoding="utf-8") as handle:
-        data: dict[str, Any] = yaml.safe_load(handle)
-    return data
+def _load_yaml() -> tuple[Mapping[str, int], Mapping[str, str | None]]:
+    """Load and validate risk_rules.yaml. Loud on any misconfiguration."""
+    data = yaml.safe_load(_RULES_FILE.read_text(encoding="utf-8"))
+    rules: dict[str, int] = dict(data["rules"])
+    flags: dict[str, str | None] = dict(data["pattern_flags"])
+    for key, value in rules.items():
+        if not isinstance(value, int):
+            raise TypeError(f"risk rule {key!r} must be an int, got {value!r}")
+    return rules, flags
 
 
-def explicit_rule_ids() -> tuple[str, ...]:
-    return tuple(sorted(_load()["rules"]))
+def load_rules() -> dict[str, int]:
+    """Return the flag-to-points mapping."""
+    return dict(_load_yaml()[0])
 
 
-def build_result(components: Iterable[RiskComponent]) -> RiskResult:
-    unique = sorted(
-        set(components), key=lambda c: (c.flag, c.points)
-    )
-    flags = tuple(sorted({c.flag for c in unique}))
-    total = sum(c.points for c in unique)
-    return RiskResult(
-        score=min(total, MAX_SCORE),
-        flags=flags,
-        components=tuple(unique),
-    )
+def pattern_flags() -> dict[str, str | None]:
+    """Return the pattern-id-to-flag mapping (null = explicit zero risk)."""
+    return dict(_load_yaml()[1])
 
 
-def score_record(record: ExplanationRecord) -> RiskResult:
-    data = _load()
+def _record_flags(record: ExplanationRecord) -> list[tuple[str, int]]:
+    """Derive (flag, points) pairs from one record. Never guesses."""
+    rules = load_rules()
+    pairs: list[tuple[str, int]] = []
     if record.status == "unverified":
-        rule = data["unverified"]
-        return build_result([RiskComponent(rule["flag"], rule["points"])])
-
-    if record.evidence is None or record.evidence.pattern_id is None:
-        raise ValueError("matched record without pattern_id cannot be scored")
-    pattern_id = record.evidence.pattern_id
-    rule = data["rules"][pattern_id]  # KeyError on purpose: no silent zero
-
-    if "points_per_level" in rule:
+        pairs.append(("UNVERIFIED_FORMULA", rules["UNVERIFIED_FORMULA"]))
+        return pairs
+    assert record.evidence is not None  # matched records always carry evidence
+    flag = pattern_flags().get(record.evidence.pattern_id, "")
+    if flag is None:
+        return pairs  # explicit zero-risk decision for this pattern
+    if flag not in rules:
+        raise ValueError(f"no points defined for flag {flag!r}")
+    if flag == "NESTED_IF_DEPTH":
+        assert record.idiom == "tiered_rate_table"
+        assert record.evidence.captured_vars["bracket_count"].isdigit()
         levels = int(record.evidence.captured_vars["bracket_count"]) - 1
-        flag = f"{rule['flag']}_{levels}"
-        return build_result(
-            [RiskComponent(flag, rule["points_per_level"] * levels)]
-        )
-    if rule["points"] == 0:
-        return build_result([])
-    return build_result([RiskComponent(rule["flag"], rule["points"])])
+        pairs.append((f"NESTED_IF_DEPTH_{levels}", rules[flag] * levels))
+    else:
+        pairs.append((flag, rules[flag]))
+    return pairs
+
+
+def score_record(
+    record: ExplanationRecord,
+    *,
+    rules: Mapping[str, int] | None = None,
+) -> RiskResult:
+    """Score one record. Pure: same input, same output, always."""
+    if rules is not None:
+        base = _load_yaml()
+        merged = {**base[0], **dict(rules)}
+        pairs = _record_flags_with(record, merged)
+    else:
+        pairs = _record_flags(record)
+    components = tuple(sorted(RiskComponent(f, p) for f, p in pairs))
+    flags = tuple(sorted({c.flag for c in components}))
+    score = min(sum(c.points for c in components), _SCORE_CAP)
+    return RiskResult(score=score, flags=flags, components=components)
+
+
+def _record_flags_with(
+    record: ExplanationRecord, rules: Mapping[str, int]
+) -> list[tuple[str, int]]:
+    """_record_flags against an explicit rules mapping (test override)."""
+    if record.status == "unverified":
+        return [("UNVERIFIED_FORMULA", rules["UNVERIFIED_FORMULA"])]
+    assert record.evidence is not None
+    flag = pattern_flags().get(record.evidence.pattern_id, "")
+    if flag is None:
+        return []
+    if flag not in rules:
+        raise ValueError(f"no points defined for flag {flag!r}")
+    if flag == "NESTED_IF_DEPTH":
+        levels = int(record.evidence.captured_vars["bracket_count"]) - 1
+        return [(f"NESTED_IF_DEPTH_{levels}", rules[flag] * levels)]
+    return [(flag, rules[flag])]
 
 
 def format_components(result: RiskResult) -> str:
-    lines = [f"{c.flag} +{c.points}" for c in result.components]
-    lines.append(f"TOTAL {result.score}")
-    return "\n".join(lines)
+    """Render the printable breakdown. Deterministic exact text."""
+    return ", ".join(f"{c.flag}: +{c.points}" for c in result.components)
 
 
 def to_contract_risk(result: RiskResult) -> Risk:
+    """Adapt a RiskResult to the Contract B Risk model."""
     return Risk(score=result.score, flags=list(result.flags))

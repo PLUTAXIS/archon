@@ -1,131 +1,122 @@
-"""Risk score: pure, integer, attributed, sorted, capped."""
+"""Risk-score tests. Weights per handoff v2, Task 5 (proposed, pending Wrik)."""
 
-import json
+from __future__ import annotations
+
+from collections.abc import Mapping
 
 from archon.contracts.graph import Risk
 from archon.explain.formula_ast import parse_mock_formula
 from archon.explain.matcher import load_patterns, match_formula
 from archon.explain.risk import (
-    MAX_SCORE,
-    RiskComponent,
     RiskResult,
-    build_result,
-    explicit_rule_ids,
     format_components,
+    load_rules,
+    pattern_flags,
     score_record,
     to_contract_risk,
 )
 
-LADDER = "=IF(B2<1000,0.05,IF(B2<5000,0.08,IF(B2<10000,0.12,0.15)))"
+NODE_ID = "Sheet1!R1C1#c1"
 
 
-def _score(formula: str, cell: str = "G2") -> RiskResult:
-    record = match_formula("n1", cell, parse_mock_formula(formula))
-    return score_record(record)
+def _record(formula: str, cell: str = "A1"):
+    return match_formula(NODE_ID, cell, parse_mock_formula(formula))
 
 
-def test_no_risk_idiom() -> None:
-    r = _score("=E2*F2")
-    assert (r.score, r.flags, r.components) == (0, (), ())
+def test_no_risk_idiom_scores_zero():
+    result = score_record(_record("=E2*F2", "G2"))
+    assert result == RiskResult(score=0, flags=(), components=())
 
 
-def test_volatile() -> None:
-    r = _score("=NOW()")
-    assert r.score == 15
-    assert r.flags == ("VOLATILE_FUNCTION",)
+def test_volatile():
+    result = score_record(_record("=NOW()"))
+    assert result.score == 15
+    assert result.flags == ("VOLATILE_FUNCTION",)
 
 
-def test_error_suppression() -> None:
-    r = _score("=IFERROR(B2/C2,0)")
-    assert r.score == 15
-    assert r.flags == ("ERROR_SUPPRESSED",)
+def test_error_suppression():
+    result = score_record(_record("=IFERROR(B2/C2,0)", "D2"))
+    assert result.score == 15
+    assert result.flags == ("ERROR_SUPPRESSED",)
 
 
-def test_tiered_depth() -> None:
-    r = _score(LADDER)
-    assert r.score == 15
-    assert r.flags == ("NESTED_IF_DEPTH_3",)
+def test_approx_lookup_default():
+    result = score_record(_record("=VLOOKUP(A2,F1:H20,3)", "D2"))
+    assert result.score == 25
+    assert result.flags == ("APPROX_LOOKUP_DEFAULT",)
 
 
-def test_running_balance() -> None:
-    r = _score("=D1+B2-C2", cell="D2")
-    assert r.score == 5
-    assert r.flags == ("RUNNING_BALANCE",)
+def test_approx_lookup_explicit():
+    result = score_record(_record("=VLOOKUP(A2,F1:H20,3,1)", "D2"))
+    assert result.score == 10
+    assert result.flags == ("APPROX_LOOKUP",)
 
 
-def test_unverified() -> None:
-    r = _score("=MEDIAN(A1:A10)")
-    assert r.score == 20
-    assert r.flags == ("UNVERIFIED_FORMULA",)
+def test_exact_lookup_scores_zero():
+    result = score_record(_record("=VLOOKUP(A2,F1:H20,3,0)", "D2"))
+    assert result == RiskResult(score=0, flags=(), components=())
 
 
-def test_components_sum_to_score() -> None:
-    r = _score(LADDER)
-    assert sum(c.points for c in r.components) == r.score
+def test_tiered_rate_table_depth():
+    formula = "=IF(B2<1000,0.05,IF(B2<5000,0.08,IF(B2<10000,0.12,0.15)))"
+    result = score_record(_record(formula, "C2"))
+    assert result.flags == ("NESTED_IF_DEPTH_3",)
+    assert result.score == 15
 
 
-def test_cap() -> None:
-    r = build_result(
-        [RiskComponent("A", 60), RiskComponent("B", 60)]
-    )
-    assert r.score == MAX_SCORE == 100
+def test_running_balance():
+    result = score_record(_record("=D1+B2-C2", "D2"))
+    assert result.score == 5
+    assert result.flags == ("RUNNING_BALANCE",)
 
 
-def test_sorted_and_unique() -> None:
-    r = build_result(
-        [
-            RiskComponent("VOLATILE_FUNCTION", 15),
-            RiskComponent("ERROR_SUPPRESSED", 15),
-            RiskComponent("ERROR_SUPPRESSED", 15),
-        ]
-    )
-    assert r.flags == ("ERROR_SUPPRESSED", "VOLATILE_FUNCTION")
+def test_unverified_is_risk():
+    result = score_record(_record("=MEDIAN(A1:A10)"))
+    assert result.score == 20
+    assert result.flags == ("UNVERIFIED_FORMULA",)
 
 
-def test_format_components_exact() -> None:
-    r = build_result(
-        [
-            RiskComponent("VOLATILE_FUNCTION", 15),
-            RiskComponent("ERROR_SUPPRESSED", 15),
-        ]
-    )
-    assert format_components(r) == (
-        "ERROR_SUPPRESSED +15\nVOLATILE_FUNCTION +15\nTOTAL 30"
-    )
-    assert format_components(build_result([])) == "TOTAL 0"
+def test_components_sum_to_score():
+    result = score_record(_record("=NOW()"))
+    assert sum(c.points for c in result.components) == result.score
+    assert result.components[0].flag == "VOLATILE_FUNCTION"
 
 
-def test_contract_adapter_round_trip() -> None:
-    risk = to_contract_risk(_score(LADDER))
+def test_score_capped_at_100():
+    rules: Mapping[str, int] = {"VOLATILE_FUNCTION": 250, "NESTED_IF_DEPTH": 5}
+    result = score_record(_record("=NOW()"), rules=rules)
+    assert result.score == 100
+
+
+def test_format_components_exact():
+    assert format_components(score_record(_record("=NOW()"))) == "VOLATILE_FUNCTION: +15"
+    ladder = "=IF(B2<1000,0.05,IF(B2<5000,0.08,IF(B2<10000,0.12,0.15)))"
+    assert format_components(score_record(_record(ladder, "C2"))) == "NESTED_IF_DEPTH_3: +15"
+    assert format_components(score_record(_record("=E2*F2", "G2"))) == ""
+
+
+def test_contract_adapter_round_trips():
+    result = score_record(_record("=NOW()"))
+    risk = to_contract_risk(result)
     assert isinstance(risk, Risk)
     assert risk.score == 15
-    assert risk.flags == ["NESTED_IF_DEPTH_3"]
+    assert risk.flags == ["VOLATILE_FUNCTION"]
     assert Risk.model_validate_json(risk.model_dump_json()) == risk
 
 
-def test_every_pattern_has_a_rule() -> None:
-    ruled = set(explicit_rule_ids())
-    missing = [s["id"] for s in load_patterns() if s["id"] not in ruled]
-    assert missing == []
+def test_every_pattern_has_explicit_risk_decision():
+    rules = load_rules()
+    flags = pattern_flags()
+    for spec in load_patterns():
+        assert spec["id"] in flags, f"no risk decision for pattern {spec['id']}"
+    for flag in sorted({f for f in flags.values() if f is not None}):
+        assert flag in rules, f"no points for flag {flag}"
 
 
-def test_determinism() -> None:
-    first = _score(LADDER)
-    first_json = to_contract_risk(first).model_dump_json()
+def test_determinism_20_runs():
+    formulas = ["=NOW()", "=IFERROR(B2/C2,0)", "=MEDIAN(A1:A10)", "=E2*F2"]
+    first = [score_record(_record(f)) for f in formulas]
     for _ in range(20):
-        again = _score(LADDER)
-        assert again == first
-        assert to_contract_risk(again).model_dump_json() == first_json
-    json.loads(first_json)
-
-
-def test_lookup_risk_flags() -> None:
-    cases = {
-        "=VLOOKUP(A2,F1:H20,3)": (25, ("APPROX_LOOKUP_DEFAULT",)),
-        "=VLOOKUP(A2,F1:H20,3,1)": (10, ("APPROX_LOOKUP",)),
-        "=VLOOKUP(A2,F1:H20,3,0)": (0, ()),
-        "=INDEX(C1:C20,MATCH(A2,B1:B20,0))": (0, ()),
-    }
-    for formula, (score, flags) in cases.items():
-        r = _score(formula, cell="D2")
-        assert (r.score, r.flags) == (score, flags)
+        assert [score_record(_record(f)) for f in formulas] == first
+    dumped = [to_contract_risk(r).model_dump_json() for r in first]
+    assert [to_contract_risk(r).model_dump_json() for r in first] == dumped
