@@ -1,0 +1,42 @@
+.report {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: var(--space-3);
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.report-title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.report-meta {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.report-summary {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.report-score-note {
+  text-align: center;
+  margin: var(--space-3) 0 0;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+@media (min-width: 768px) {
+  .report-summary {
+    grid-template-columns: 2fr 1fr;
+    align-items: start;
+  }
+}
