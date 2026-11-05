@@ -115,7 +115,8 @@ def process_file_task(file_path):
     except ExtractException as e:
         ledger_exceptions.append({"code": e.code, "severity": "error", "detail": str(e.detail)})
     except Exception as e:
-        ledger_exceptions.append({"code": "E_OLE_PARSE_FAILED", "severity": "error", "detail": str(e)})
+        # NEW FIX: Catching ANY unexpected crash and logging it as a FATAL error before failing
+        ledger_exceptions.append({"code": "E_FATAL_CRASH", "severity": "fatal", "detail": f"Unexpected ingestion crash: {str(e)}"})
 
     if ledger_exceptions:
         ledger_file = f"exceptions_ledger_{run_id}.json"
