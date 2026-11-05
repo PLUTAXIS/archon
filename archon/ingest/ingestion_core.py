@@ -8,33 +8,32 @@ from openpyxl.utils.exceptions import InvalidFileException
 from oletools.olevba import VBA_Parser
 import msoffcrypto
 
-# Now only importing the data models, NOT using ExtractException as a throwable error
-from archon.contracts.extract import RawExtract, Cell, Sheet
+# Importing all required models strictly according to Contract A
+from archon.contracts.extract import RawExtract, Cell, Sheet, Source, ExtractException
 
-class IngestionError(Exception):
-    """Custom standard exception for ingestion failures to avoid Pydantic clashes."""
-    def __init__(self, code, detail):
-        super().__init__(detail)
-        self.code = code
-        self.detail = detail
+class ExtractError(Exception):
+    """
+    Standard exception wrapper for the Pydantic ExtractException model.
+    Fixes the issue of raising a Pydantic model directly.
+    """
+    def __init__(self, exc: ExtractException):
+        super().__init__(exc.detail)
+        self.exc = exc
 
 def is_password_protected(file_path):
-    """
-    Checks if a Microsoft Office file is encrypted with a password.
-    """
+    """Checks if a Microsoft Office file is encrypted with a password."""
     try:
         with open(file_path, "rb") as f:
             office_file = msoffcrypto.OfficeFile(f)
             return office_file.is_encrypted()
-    except msoffcrypto.exceptions.InvalidFileException:
-        raise IngestionError(code="E_CORRUPT_ZIP", detail="Malformed or unsupported file format.")
+    except msoffcrypto.exceptions.FileFormatError:
+        # Catching specific msoffcrypto error as demanded by CodeRabbit
+        raise ExtractError(ExtractException(code="E_CORRUPT_ZIP", severity="error", detail="Malformed or unsupported file format."))
     except Exception as e:
-        raise IngestionError(code="E_OLE_PARSE_FAILED", detail=f"Cannot securely inspect file: {str(e)}")
+        raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Cannot securely inspect file: {str(e)}"))
 
 def extract_vba_macros(file_path):
-    """
-    Extracts embedded VBA macros from the Office file and generates verifiable metadata.
-    """
+    """Extracts embedded VBA macros from the Office file and generates verifiable metadata."""
     metadata = []
     try:
         vba_parser = VBA_Parser(file_path)
@@ -49,70 +48,87 @@ def extract_vba_macros(file_path):
                 })
         return metadata
     except Exception as e:
-        raise IngestionError(code="E_OLE_PARSE_FAILED", detail=f"VBA extraction failed explicitly: {str(e)}")
+        raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"VBA extraction failed explicitly: {str(e)}"))
 
-def parse_excel_workbook(file_path, run_id):
+def parse_excel_workbook(file_path, full_uuid):
     """
-    Parses workbook into a unified Contract A RawExtract object safely.
+    Parses workbook safely into a Contract A RawExtract object.
+    Implements memory-safe chunked hashing and strict Pydantic model fields.
     """
     if is_password_protected(file_path):
-        raise IngestionError(code="E_UNSUPPORTED_FEATURE", detail="Password protected file.")
+        raise ExtractError(ExtractException(code="E_UNSUPPORTED_FEATURE", severity="error", detail="Password protected file."))
 
+    # Memory-safe chunked file hashing to prevent exhaustion
+    file_hash_obj = hashlib.sha256()
     with open(file_path, 'rb') as f:
-        file_hash = hashlib.sha256(f.read()).hexdigest()
+        for chunk in iter(lambda: f.read(4096), b""):
+            file_hash_obj.update(chunk)
+    file_hash = file_hash_obj.hexdigest()
 
     try:
-        # Re-enabled read_only=True to fix memory exhaustion risk flagged by CodeRabbit
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=False)
         
         sheets_data = []
-        for sheet_name in wb.sheetnames:
+        cells_data = []
+        
+        for idx, sheet_name in enumerate(wb.sheetnames):
             ws = wb[sheet_name]
-            cells_data = []
+            
+            # Extract dimensions safely for read_only mode
+            dim = ws.calculate_dimension() if hasattr(ws, 'calculate_dimension') else "A1"
+            
+            sheets_data.append(Sheet(
+                index=idx,
+                visibility="visible",
+                dimensions=dim
+            ))
             
             for row in ws.iter_rows():
                 for cell in row:
                     formula_str = None
-                    # We are in read-only mode, we can only safely extract formulas.
-                    # Senpai's compute parity will require a separate tool or engine later.
+                    is_array = False
+                    
                     if isinstance(cell.value, ArrayFormula):
                         formula_str = cell.value.text
+                        is_array = True
                     elif cell.data_type == 'f' or (isinstance(cell.value, str) and cell.value.startswith('=')):
                         formula_str = str(cell.value)
                     
                     if formula_str is not None:
                         cells_data.append(Cell(
-                            reference=cell.coordinate,
-                            formula=formula_str,
-                            cached_value=None # Cached values are unreliable in read-only mode
+                            sheet=sheet_name,
+                            address=cell.coordinate,
+                            row=cell.row,
+                            col=cell.column,
+                            data_type='f',
+                            is_array_formula=is_array
                         ))
                         
-            sheets_data.append(Sheet(
-                name=sheet_name,
-                state="visible", # read_only mode doesn't support sheet_state property natively
-                cells=cells_data
-            ))
-        
         wb.close()
         vba_metadata = extract_vba_macros(file_path)
 
+        source_obj = Source(filename=os.path.basename(file_path), sha256=file_hash, vba=vba_metadata)
+
         return RawExtract(
             schema_version="1.0",
-            workbook_id=run_id,
-            source={"filename": os.path.basename(file_path), "sha256": file_hash, "vba": vba_metadata},
-            sheets=sheets_data
+            workbook_id=full_uuid,
+            source=source_obj,
+            sheets=sheets_data,
+            cells=cells_data,
+            exceptions=[]
         )
         
     except InvalidFileException as e:
-        raise IngestionError(code="E_CORRUPT_ZIP", detail=f"FileFormatError in openpyxl: {str(e)}")
-    except IngestionError:
+        raise ExtractError(ExtractException(code="E_CORRUPT_ZIP", severity="error", detail=f"FileFormatError in openpyxl: {str(e)}"))
+    except ExtractError:
         raise
     except Exception as e:
-        raise IngestionError(code="E_OLE_PARSE_FAILED", detail=f"Unexpected parsing error: {str(e)}")
+        raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Unexpected parsing error: {str(e)}"))
 
 def extract_access_db(file_path):
     """
     Extracts table schemas from an MS Access database safely.
+    Returns columns on Windows, but only table_name and status on non-Windows systems.
     """
     extracted_tables = []
     if platform.system() != "Windows":
@@ -123,7 +139,7 @@ def extract_access_db(file_path):
                 extracted_tables.append({"table_name": t, "status": "Extracted via mdbtools"})
             return extracted_tables
         except Exception as e:
-            raise IngestionError(code="E_UNSUPPORTED_FEATURE", detail=f"mdbtools extraction failed: {str(e)}")
+            raise ExtractError(ExtractException(code="E_UNSUPPORTED_FEATURE", severity="error", detail=f"mdbtools extraction failed: {str(e)}"))
     else:
         import pyodbc
         conn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=' + file_path + ';'
@@ -140,7 +156,7 @@ def extract_access_db(file_path):
         except pyodbc.Error as e:
             err_text = str(e.args[1]).lower() if len(e.args) > 1 else str(e).lower()
             if "password" in err_text:
-                raise IngestionError(code="E_UNSUPPORTED_FEATURE", detail="Access DB is password protected.")
-            raise IngestionError(code="E_OLE_PARSE_FAILED", detail=f"Connection failed: {err_text}")
+                raise ExtractError(ExtractException(code="E_UNSUPPORTED_FEATURE", severity="error", detail="Access DB is password protected."))
+            raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Connection failed: {err_text}"))
         except Exception as e:
-            raise IngestionError(code="E_OLE_PARSE_FAILED", detail=f"Access extraction failed: {str(e)}")
+            raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Access extraction failed: {str(e)}"))

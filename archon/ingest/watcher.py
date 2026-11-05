@@ -3,20 +3,22 @@ import os
 import shutil
 import uuid
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from archon.ingest.ingestion_core import parse_excel_workbook, extract_access_db, IngestionError
-# Now using ExtractException solely for writing to the ledger JSON as designed
+from archon.ingest.ingestion_core import parse_excel_workbook, extract_access_db, ExtractError
 from archon.contracts.extract import ExtractException
 
 executor = ThreadPoolExecutor(max_workers=4)
 
+# Global lock and set to prevent duplicate file processing (CodeRabbit Deduplication Fix)
+PROCESSING_FILES = set()
+PROCESSING_LOCK = threading.Lock()
+
 def wait_for_file_transfer(file_path, timeout=60):
-    """
-    Monitors a file to ensure it has completely finished transferring to the dropzone.
-    """
+    """Monitors a file to ensure it has completely finished transferring to the dropzone."""
     historical_size = -1
     retries = 0
     while retries < timeout:
@@ -35,9 +37,7 @@ def wait_for_file_transfer(file_path, timeout=60):
     return False
 
 def route_deliverables(deliverable_path):
-    """
-    Routes the extracted JSON output files to designated downstream folders.
-    """
+    """Routes the extracted JSON output files to designated downstream folders."""
     mainak_folder = "For_Mainak"
     senpai_folder = "For_Senpai"
     try:
@@ -52,9 +52,7 @@ def route_deliverables(deliverable_path):
         return False
 
 def archive_original_file(file_path):
-    """
-    Moves the processed original client file into a secure archive directory with a timestamp.
-    """
+    """Moves the processed original client file into a secure archive directory with a timestamp."""
     archive_folder = "Archive_Processed"
     base_name, ext = os.path.splitext(os.path.basename(file_path))
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -68,67 +66,73 @@ def archive_original_file(file_path):
         return False
 
 def process_file_task(file_path):
-    """
-    Worker task that runs on a separate thread to process files without blocking the observer.
-    """
-    if not wait_for_file_transfer(file_path):
-        return
-
-    print(f"\n[ALERT] Processing locked client file: {os.path.basename(file_path)}")
-    run_id = uuid.uuid4().hex[:8]
-    ledger_exceptions = []
-    deliverable_path = None
+    """Worker task with deduplication lock to process files securely."""
     
-    try:
-        if file_path.endswith(('.xlsx', '.xlsm')):
-            raw_extract = parse_excel_workbook(file_path, run_id)
-            deliverable_path = f"extract_{run_id}.json"
-            with open(deliverable_path, "w") as f:
-                f.write(raw_extract.model_dump_json(indent=4))
-                
-        elif file_path.endswith('.accdb'):
-            access_data = extract_access_db(file_path)
-            deliverable_path = f"access_schema_{run_id}.json"
-            with open(deliverable_path, "w") as f:
-                json.dump(access_data, f, indent=4)
-                
-    except IngestionError as e:
-        # Use Pydantic ExtractException model only for serialization to ledger
-        ex_model = ExtractException(code=e.code, detail=e.detail)
-        ledger_exceptions.append(ex_model.model_dump())
-    except Exception as e:
-        ex_model = ExtractException(code="E_FATAL_CRASH", detail=f"Unexpected ingestion crash: {str(e)}")
-        ledger_exceptions.append(ex_model.model_dump())
-
-    if ledger_exceptions:
-        ledger_file = f"exceptions_ledger_{run_id}.json"
-        with open(ledger_file, "w") as lf:
-            json.dump(ledger_exceptions, lf, indent=4)
-        print(f"[-] Exceptions logged for {os.path.basename(file_path)}.")
+    with PROCESSING_LOCK:
+        if file_path in PROCESSING_FILES:
+            return  # Prevent duplicate concurrent processing
+        PROCESSING_FILES.add(file_path)
         
-        # If extraction failed, we still archive the bad file so it doesn't loop
-        archive_original_file(file_path)
+    try:
+        if not wait_for_file_transfer(file_path):
+            return
 
-    elif deliverable_path:
-        # Success path: atomic check to ensure duplicate processing loop doesn't occur
-        if route_deliverables(deliverable_path):
-            if archive_original_file(file_path):
-                print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+        print(f"\n[ALERT] Processing locked client file: {os.path.basename(file_path)}")
+        
+        # Generating full UUID as strictly required by Contract A
+        full_uuid = uuid.uuid4()
+        run_id = full_uuid.hex[:8] 
+        
+        ledger_exceptions = []
+        deliverable_path = None
+        
+        try:
+            if file_path.endswith(('.xlsx', '.xlsm')):
+                raw_extract = parse_excel_workbook(file_path, full_uuid)
+                deliverable_path = f"extract_{run_id}.json"
+                with open(deliverable_path, "w") as f:
+                    f.write(raw_extract.model_dump_json(indent=4))
+                    
+            elif file_path.endswith('.accdb'):
+                access_data = extract_access_db(file_path)
+                deliverable_path = f"access_schema_{run_id}.json"
+                with open(deliverable_path, "w") as f:
+                    json.dump(access_data, f, indent=4)
+                    
+        except ExtractError as e:
+            ledger_exceptions.append(e.exc.model_dump())
+        except Exception as e:
+            ex_model = ExtractException(code="E_FATAL_CRASH", severity="fatal", detail=f"Unexpected crash: {str(e)}")
+            ledger_exceptions.append(ex_model.model_dump())
+
+        if ledger_exceptions:
+            ledger_file = f"exceptions_ledger_{run_id}.json"
+            with open(ledger_file, "w") as lf:
+                json.dump(ledger_exceptions, lf, indent=4)
+            print(f"[-] Exceptions logged for {os.path.basename(file_path)}.")
+            archive_original_file(file_path)
+
+        elif deliverable_path:
+            if route_deliverables(deliverable_path):
+                if archive_original_file(file_path):
+                    print(f"[SUCCESS] Execution cycle finished for {os.path.basename(file_path)}.")
+                else:
+                    print(f"[-] WARNING: File routed, but archive failed for {os.path.basename(file_path)}.")
             else:
-                print(f"[-] WARNING: File processed and routed, but archive failed for {os.path.basename(file_path)}.")
-        else:
-            print(f"[-] Execution cycle FAILED (Routing Error) for {os.path.basename(file_path)}.")
+                print(f"[-] Execution cycle FAILED (Routing Error) for {os.path.basename(file_path)}.")
+                
+    finally:
+        with PROCESSING_LOCK:
+            PROCESSING_FILES.discard(file_path)
 
 class DropzoneHandler(FileSystemEventHandler):
     """Watchdog event handler that monitors directory state."""
     
     def on_created(self, event):
-        """Triggered when a file or directory is created."""
         if not event.is_directory and event.src_path.endswith(('.xlsx', '.xlsm', '.accdb')):
             executor.submit(process_file_task, event.src_path)
             
     def on_moved(self, event):
-        """Triggered when a file or directory is moved or renamed."""
         if not event.is_directory and event.dest_path.endswith(('.xlsx', '.xlsm', '.accdb')):
             executor.submit(process_file_task, event.dest_path)
 
