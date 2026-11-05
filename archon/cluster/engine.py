@@ -15,6 +15,14 @@ Constant = tuple[str, str, str]
 
 
 def cluster_cells(rows: Iterable[Row]) -> tuple[Clusters, list[Constant]]:
+    """Group formula cells by (sheet, column, R1C1 text) and separate out constants.
+
+    `rows` is an iterable of (sheet, address, content) tuples, where content is
+    either a formula string starting with "=" or a hardcoded value. Blank
+    content is skipped. Returns (clusters, constants), where clusters maps
+    each (sheet, column, R1C1 text) key to its sorted list of (row, address)
+    members, and constants lists every non-formula cell found.
+    """
     clusters: defaultdict[ClusterKey, list[tuple[int, str]]] = defaultdict(list)
     constants: list[Constant] = []
     for sheet, addr, content in rows:
@@ -33,6 +41,9 @@ def cluster_cells(rows: Iterable[Row]) -> tuple[Clusters, list[Constant]]:
 
 
 def summarise(clusters: Clusters, constants: list[Constant]) -> dict[str, Any]:
+    """Summarise clustering results: total formula cells, cluster count,
+    constant count, and the resulting compression ratio (cells per cluster).
+    """
     formula_cells = sum(len(m) for m in clusters.values())
     n = len(clusters)
     return {
@@ -44,6 +55,12 @@ def summarise(clusters: Clusters, constants: list[Constant]) -> dict[str, Any]:
 
 
 def contiguous_runs(rows_sorted: list[int]) -> list[tuple[int, int]]:
+    """Collapse a sorted list of row numbers into (start, end) runs.
+
+    Example: [2, 3, 4, 6, 7] -> [(2, 4), (6, 7)]. A gap inside a cluster's
+    row range usually indicates a hardcoded override sitting in the middle
+    of an otherwise-dragged formula column.
+    """
     if not rows_sorted:
         return []
     runs: list[tuple[int, int]] = []
@@ -58,5 +75,10 @@ def contiguous_runs(rows_sorted: list[int]) -> list[tuple[int, int]]:
 
 
 def load_formulas(path: str | Path) -> list[Row]:
+    """Load formula rows from Saba's extracted_formulas.json format.
+
+    Expects a JSON array of objects with "sheet", "cell_reference", and
+    "formula" keys, and returns them as (sheet, address, content) tuples.
+    """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return [(d["sheet"], d["cell_reference"], d["formula"]) for d in data]

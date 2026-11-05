@@ -8,6 +8,7 @@ MAX_ROW = 1048576
 
 
 def col_to_num(letters: str) -> int:
+    """Convert a column letter string (e.g. "C", "AB") to its 1-based column number."""
     n = 0
     for ch in letters.upper():
         n = n * 26 + (ord(ch) - 64)
@@ -15,6 +16,7 @@ def col_to_num(letters: str) -> int:
 
 
 def num_to_col(n: int) -> str:
+    """Convert a 1-based column number to its column letter string (e.g. 3 -> "C")."""
     s = ""
     while n > 0:
         n, r = divmod(n - 1, 26)
@@ -23,6 +25,11 @@ def num_to_col(n: int) -> str:
 
 
 def parse_address(addr: str) -> tuple[int, int]:
+    """Parse a plain A1-style cell address (no sheet) into (row, column).
+
+    Example: "D6" -> (6, 4). Dollar signs are accepted and ignored.
+    Raises ValueError if the address is not a valid cell reference.
+    """
     m = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?(\d+)", addr.strip())
     if not m:
         raise ValueError(f"Bad cell address: {addr!r}")
@@ -33,6 +40,11 @@ _LITERAL = re.compile(r'"(?:[^"]|"")*"|\'(?:[^\']|\'\')*\'')
 
 
 def _map_code(formula: str, fn: Callable[[str], str]) -> str:
+    """Apply fn to every part of formula that is not a quoted string literal.
+
+    String literals ("...") and quoted sheet names ('...') are copied through
+    unchanged so references inside them are never rewritten.
+    """
     out: list[str] = []
     pos = 0
     for m in _LITERAL.finditer(formula):
@@ -67,6 +79,7 @@ _A1 = re.compile(
 
 
 def _row_part(abs_flag: str, row: int, cur_row: int) -> str:
+    """Render the R-part of an R1C1 token: "R{row}" if absolute, else a relative offset."""
     if abs_flag:
         return f"R{row}"
     d = row - cur_row
@@ -74,6 +87,7 @@ def _row_part(abs_flag: str, row: int, cur_row: int) -> str:
 
 
 def _col_part(abs_flag: str, col: int, cur_col: int) -> str:
+    """Render the C-part of an R1C1 token: "C{col}" if absolute, else a relative offset."""
     if abs_flag:
         return f"C{col}"
     d = col - cur_col
@@ -81,6 +95,12 @@ def _col_part(abs_flag: str, col: int, cur_col: int) -> str:
 
 
 def to_r1c1(formula: str, cell: str) -> str:
+    """Convert an A1-style formula located at `cell` into relative R1C1 text.
+
+    Identical dragged formulas (e.g. "=B6*C6" at D6 and "=B7*C7" at D7) produce
+    the same R1C1 string, which is what makes clustering by text possible.
+    Absolute references ($B$7) stay absolute in the R1C1 output.
+    """
     cur_row, cur_col = parse_address(cell)
 
     def convert(code: str) -> str:
@@ -130,6 +150,7 @@ _R1C1 = re.compile(
 
 
 def _axis(tok: str | None, cur: int, to_text: Callable[[int], str]) -> tuple[str, str]:
+    """Resolve one R1C1 axis token (e.g. "[-2]", "7", or None) to an (abs_flag, text) pair."""
     if tok is None:
         return "", to_text(cur)
     if tok.startswith("["):
@@ -138,6 +159,11 @@ def _axis(tok: str | None, cur: int, to_text: Callable[[int], str]) -> tuple[str
 
 
 def to_a1(formula: str, cell: str) -> str:
+    """Convert an R1C1-style formula located at `cell` back into A1 text.
+
+    This is the inverse of to_r1c1 and is used for round-trip verification,
+    not as a primary output format.
+    """
     cur_row, cur_col = parse_address(cell)
 
     def convert(code: str) -> str:
