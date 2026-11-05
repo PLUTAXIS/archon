@@ -13,7 +13,6 @@ from archon.contracts.extract import ExtractException
 
 executor = ThreadPoolExecutor(max_workers=4)
 
-# Global lock and set to prevent duplicate file processing (CodeRabbit Deduplication Fix)
 PROCESSING_FILES = set()
 PROCESSING_LOCK = threading.Lock()
 
@@ -51,6 +50,21 @@ def route_deliverables(deliverable_path):
         print(f"[-] ERROR routing deliverable: {str(e)}")
         return False
 
+def route_ledger(ledger_path):
+    """Routes the exceptions ledger to downstream folders ensuring downstream notification."""
+    mainak_folder = "For_Mainak"
+    senpai_folder = "For_Senpai"
+    try:
+        os.makedirs(mainak_folder, exist_ok=True)
+        os.makedirs(senpai_folder, exist_ok=True)
+        if os.path.exists(ledger_path):
+            shutil.copy(ledger_path, os.path.join(mainak_folder, os.path.basename(ledger_path)))
+            shutil.move(ledger_path, os.path.join(senpai_folder, os.path.basename(ledger_path)))
+        return True
+    except Exception as e:
+        print(f"[-] ERROR routing ledger: {str(e)}")
+        return False
+
 def archive_original_file(file_path):
     """Moves the processed original client file into a secure archive directory with a timestamp."""
     archive_folder = "Archive_Processed"
@@ -70,7 +84,7 @@ def process_file_task(file_path):
     
     with PROCESSING_LOCK:
         if file_path in PROCESSING_FILES:
-            return  # Prevent duplicate concurrent processing
+            return
         PROCESSING_FILES.add(file_path)
         
     try:
@@ -79,7 +93,6 @@ def process_file_task(file_path):
 
         print(f"\n[ALERT] Processing locked client file: {os.path.basename(file_path)}")
         
-        # Generating full UUID as strictly required by Contract A
         full_uuid = uuid.uuid4()
         run_id = full_uuid.hex[:8] 
         
@@ -102,7 +115,8 @@ def process_file_task(file_path):
         except ExtractError as e:
             ledger_exceptions.append(e.exc.model_dump())
         except Exception as e:
-            ex_model = ExtractException(code="E_FATAL_CRASH", severity="fatal", detail=f"Unexpected crash: {str(e)}")
+            # Using a supported fallback code and severity
+            ex_model = ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Unexpected crash: {str(e)}")
             ledger_exceptions.append(ex_model.model_dump())
 
         if ledger_exceptions:
@@ -110,7 +124,11 @@ def process_file_task(file_path):
             with open(ledger_file, "w") as lf:
                 json.dump(ledger_exceptions, lf, indent=4)
             print(f"[-] Exceptions logged for {os.path.basename(file_path)}.")
-            archive_original_file(file_path)
+            # Route ledger downstream before archiving
+            if route_ledger(ledger_file):
+                archive_original_file(file_path)
+            else:
+                print(f"[-] WARNING: Exception ledger routed failed for {os.path.basename(file_path)}.")
 
         elif deliverable_path:
             if route_deliverables(deliverable_path):

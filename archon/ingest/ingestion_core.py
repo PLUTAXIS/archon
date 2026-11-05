@@ -12,10 +12,7 @@ import msoffcrypto
 from archon.contracts.extract import RawExtract, Cell, Sheet, Source, ExtractException
 
 class ExtractError(Exception):
-    """
-    Standard exception wrapper for the Pydantic ExtractException model.
-    Fixes the issue of raising a Pydantic model directly.
-    """
+    """Standard exception wrapper for the Pydantic ExtractException model."""
     def __init__(self, exc: ExtractException):
         super().__init__(exc.detail)
         self.exc = exc
@@ -27,7 +24,6 @@ def is_password_protected(file_path):
             office_file = msoffcrypto.OfficeFile(f)
             return office_file.is_encrypted()
     except msoffcrypto.exceptions.FileFormatError:
-        # Catching specific msoffcrypto error as demanded by CodeRabbit
         raise ExtractError(ExtractException(code="E_CORRUPT_ZIP", severity="error", detail="Malformed or unsupported file format."))
     except Exception as e:
         raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Cannot securely inspect file: {str(e)}"))
@@ -58,11 +54,12 @@ def parse_excel_workbook(file_path, full_uuid):
     if is_password_protected(file_path):
         raise ExtractError(ExtractException(code="E_UNSUPPORTED_FEATURE", severity="error", detail="Password protected file."))
 
-    # Memory-safe chunked file hashing to prevent exhaustion
     file_hash_obj = hashlib.sha256()
+    file_bytes = 0
     with open(file_path, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
             file_hash_obj.update(chunk)
+            file_bytes += len(chunk)
     file_hash = file_hash_obj.hexdigest()
 
     try:
@@ -73,11 +70,10 @@ def parse_excel_workbook(file_path, full_uuid):
         
         for idx, sheet_name in enumerate(wb.sheetnames):
             ws = wb[sheet_name]
-            
-            # Extract dimensions safely for read_only mode
             dim = ws.calculate_dimension() if hasattr(ws, 'calculate_dimension') else "A1"
             
             sheets_data.append(Sheet(
+                name=sheet_name,
                 index=idx,
                 visibility="visible",
                 dimensions=dim
@@ -100,14 +96,19 @@ def parse_excel_workbook(file_path, full_uuid):
                             address=cell.coordinate,
                             row=cell.row,
                             col=cell.column,
-                            data_type='f',
+                            data_type="formula", # Correct data_type for formulas in Contract A
                             is_array_formula=is_array
                         ))
                         
         wb.close()
-        vba_metadata = extract_vba_macros(file_path)
 
-        source_obj = Source(filename=os.path.basename(file_path), sha256=file_hash, vba=vba_metadata)
+        # Contract A Source requires format and bytes. vba is NOT part of Source.
+        source_obj = Source(
+            filename=os.path.basename(file_path), 
+            sha256=file_hash,
+            format="xlsx", 
+            bytes=file_bytes
+        )
 
         return RawExtract(
             schema_version="1.0",
@@ -126,10 +127,7 @@ def parse_excel_workbook(file_path, full_uuid):
         raise ExtractError(ExtractException(code="E_OLE_PARSE_FAILED", severity="error", detail=f"Unexpected parsing error: {str(e)}"))
 
 def extract_access_db(file_path):
-    """
-    Extracts table schemas from an MS Access database safely.
-    Returns columns on Windows, but only table_name and status on non-Windows systems.
-    """
+    """Extracts table schemas from an MS Access database safely."""
     extracted_tables = []
     if platform.system() != "Windows":
         try:
