@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import pytest
+
 from archon.contracts.graph import Risk
 from archon.explain.formula_ast import parse_mock_formula
 from archon.explain.matcher import load_patterns, match_formula
 from archon.explain.risk import (
     RiskResult,
+    _parse_rules,
     format_components,
     load_rules,
     pattern_flags,
@@ -120,3 +123,46 @@ def test_determinism_20_runs():
         assert [score_record(_record(f)) for f in formulas] == first
     dumped = [to_contract_risk(r).model_dump_json() for r in first]
     assert [to_contract_risk(r).model_dump_json() for r in first] == dumped
+
+
+# --- review fixes: strict config validation ---
+
+
+def test_duplicate_rule_key_rejected():
+    text = "rules:\n  VOLATILE_FUNCTION: 15\n  VOLATILE_FUNCTION: 20\npattern_flags: {}\n"
+    with pytest.raises(ValueError, match="duplicate"):
+        _parse_rules(text)
+
+
+def test_duplicate_pattern_flag_key_rejected():
+    text = "rules: {}\npattern_flags:\n  product: null\n  product: null\n"
+    with pytest.raises(ValueError, match="duplicate"):
+        _parse_rules(text)
+
+
+def test_bool_weight_in_yaml_rejected():
+    with pytest.raises(TypeError, match="must be an int"):
+        _parse_rules("rules:\n  VOLATILE_FUNCTION: true\npattern_flags: {}\n")
+
+
+def test_negative_weight_in_yaml_rejected():
+    with pytest.raises(ValueError, match="must be >= 0"):
+        _parse_rules("rules:\n  VOLATILE_FUNCTION: -5\npattern_flags: {}\n")
+
+
+def test_bool_override_rejected():
+    with pytest.raises(TypeError, match="must be an int"):
+        score_record(_record("=NOW()"), rules={"VOLATILE_FUNCTION": True})
+
+
+def test_negative_override_rejected():
+    with pytest.raises(ValueError, match="must be >= 0"):
+        score_record(_record("=NOW()"), rules={"VOLATILE_FUNCTION": -5})
+
+
+def test_matched_record_without_evidence_rejected():
+    matched = _record("=NOW()")
+    assert matched.evidence is not None
+    broken = matched.model_copy(update={"evidence": None})
+    with pytest.raises(ValueError, match="evidence"):
+        score_record(broken)
