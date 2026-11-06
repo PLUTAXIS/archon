@@ -1,19 +1,20 @@
-import sys
-import time
+import json
 import os
 import shutil
+import time
 import uuid
-import json
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from ingestion_core import (
-    analyze_workbook_structure, 
-    extract_formulas, 
-    extract_vba_macros, 
-    extract_access_db, 
-    is_password_protected
+    analyze_workbook_structure,
+    extract_access_db,
+    extract_formulas,
+    extract_vba_macros,
+    is_password_protected,
 )
+
 
 def wait_for_file_transfer(file_path, timeout=60):
     """
@@ -38,7 +39,7 @@ def wait_for_file_transfer(file_path, timeout=60):
             retries += 1
         except FileNotFoundError:
             return False
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(1)
             retries += 1
     return False
@@ -67,8 +68,8 @@ def route_deliverables(deliverables):
                 shutil.copy(f, os.path.join(mainak_folder, f))
                 shutil.move(f, os.path.join(senpai_folder, f))
         return True
-    except Exception as e:
-        print(f"[-] ERROR during hand-off routing: {str(e)}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[-] ERROR during hand-off routing: {e!s}")
         return False
 
 def archive_original_file(file_path):
@@ -90,8 +91,8 @@ def archive_original_file(file_path):
     try:
         os.makedirs(archive_folder, exist_ok=True)
         shutil.move(file_path, archive_path)
-    except Exception as e:
-        raise RuntimeError(f"Archive directory failure: {str(e)}")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Archive directory failure: {e!s}")
 
 def process_file(file_path):
     """
@@ -104,7 +105,7 @@ def process_file(file_path):
     if not wait_for_file_transfer(file_path):
         return
 
-    print(f"\n[==================================================]")
+    print("\n[==================================================]")
     print(f"[ALERT] Processing locked client file: {os.path.basename(file_path)}")
     
     run_id = uuid.uuid4().hex[:8]
@@ -130,7 +131,7 @@ def process_file(file_path):
         ledger_exceptions.append({"code": "E_VALIDATION_ERROR", "severity": "error", "detail": str(e)})
     except RuntimeError as e:
         ledger_exceptions.append({"code": "E_RUNTIME_FAILURE", "severity": "error", "detail": str(e)})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ledger_exceptions.append({"code": "E_FATAL_CRASH", "severity": "error", "detail": str(e)})
 
     ledger_file = f"exceptions_ledger_{run_id}.json"
@@ -147,7 +148,7 @@ def process_file(file_path):
             else:
                 print(f"[-] Execution cycle FAILED (Routing Error) for {os.path.basename(file_path)}.")
     except RuntimeError as arch_err:
-        print(f"[-] CYCLE FAILED (Archive Error): {str(arch_err)}")
+        print(f"[-] CYCLE FAILED (Archive Error): {arch_err!s}")
 
     print("[*] Waiting for the next file... (Press Ctrl+C to stop)")
 
@@ -193,7 +194,7 @@ if __name__ == "__main__":
     observer.start()
     
     print(f"[*] 🚀 ENTERPRISE WATCHER ACTIVE: '{dropzone_path}' 24/7.")
-    print(f"[*] V7.2 (Reconciliation Applied): Processing pre-existing files.")
+    print("[*] V7.2 (Reconciliation Applied): Processing pre-existing files.")
     
     # NEW FIX: Reconcile existing files that were dropped before the observer started
     for filename in os.listdir(dropzone_path):

@@ -79,6 +79,7 @@ class Masker:
 
 
 def scrub_sheet(xml, m):
+    """Redact cell values in a worksheet XML part, keeping formulas and structure."""
     def fix_cell(match):
         attrs, body = match.group(1), match.group(2)
         if body is None:  # empty cell
@@ -105,6 +106,7 @@ def scrub_shared_strings(xml, m):
                   xml, flags=re.DOTALL)
 
 
+    """Redact author and metadata tags in a document properties XML part."""
 def scrub_properties(xml, m):
     for tag in PROPERTY_TAGS:
         xml, n = re.subn(r"(<%s\b[^>]*>).*?(</%s>)" % (tag, tag), r"\1redacted\2", xml, flags=re.DOTALL)
@@ -125,6 +127,7 @@ def scrub_threaded_comments(xml, m):
     return re.sub(r'\b(displayName|userId|providerId)="[^"]*"', r'\1="redacted"', xml)
 
 
+    """Strip cached chart data and redact titles and labels in a chart XML part."""
 def scrub_chart(xml, m):
     xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.DOTALL)  # saved data copies
     xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)  # titles, labels
