@@ -95,7 +95,7 @@ def load_formulas(path: str | Path) -> list[Row]:
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list):
-        raise ValueError("Expected a JSON array of formula records")
+        raise TypeError("Expected a JSON array of formula records")
     rows: list[Row] = []
     for i, d in enumerate(data):
         try:

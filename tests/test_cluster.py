@@ -88,7 +88,7 @@ class TestLoadFormulas(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "extracted_formulas.json"
             path.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
-            with self.assertRaises(ValueError):
+            with self.assertRaises(TypeError):
                 load_formulas(path)
 
     def test_missing_field_raises_value_error_naming_index(self) -> None:
