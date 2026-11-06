@@ -90,8 +90,7 @@ def load_formulas(path: str | Path) -> list[Row]:
     "formula" keys, and returns them as (sheet, address, content) tuples.
     A null "formula" (used by some extractors for blank cells) is treated
     as an empty string rather than the literal text "None". Raises
-    ValueError, naming the bad entry's index, if the file is not a JSON
-    array or an entry is missing a required field.
+    TypeError if the file is not a JSON array, and ValueError, naming the bad entry's index, if an entry is missing a required field.
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list):
