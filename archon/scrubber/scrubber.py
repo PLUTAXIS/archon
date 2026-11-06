@@ -36,7 +36,7 @@ REVIEW = {
 PROPERTY_TAGS = ("dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject",
                  "dc:description", "cp:keywords", "Company", "Manager")
 # One cell, either <c .../> (empty) or <c ...>...</c>.
-CELL = re.compile(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", re.S)
+CELL = re.compile(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", re.DOTALL)
 
 
 class ScrubError(Exception):
@@ -84,17 +84,17 @@ def scrub_sheet(xml, m):
         if body is None:  # empty cell
             return match.group(0)
         if re.search(r"<f[\s>/]", body):  # formula cell: keep <f>, drop its saved result
-            body, n = re.subn(r"<v>.*?</v>|<v/>", "", body, flags=re.S)
+            body, n = re.subn(r"<v>.*?</v>|<v/>", "", body, flags=re.DOTALL)
             m.count["formula_results"] += n
         else:
             kind = re.search(r'\bt="(\w+)"', attrs)
             kind = kind.group(1) if kind else "n"
             if kind == "n":  # a typed-in number
                 body = re.sub(r"<v>(.*?)</v>", lambda x: "<v>%s</v>" % m.number(x.group(1)),
-                              body, flags=re.S)
+                              body, flags=re.DOTALL)
             elif kind == "inlineStr":  # text stored inside the cell
                 body = re.sub(r"<is>.*?</is>",
-                              lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.S)
+                              lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.DOTALL)
             # kind "s" points into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
         return "<c%s>%s</c>" % (attrs, body)
     return CELL.sub(fix_cell, xml)
@@ -102,32 +102,32 @@ def scrub_sheet(xml, m):
 
 def scrub_shared_strings(xml, m):
     return re.sub(r"<si>.*?</si>", lambda x: "<si><t>%s</t></si>" % m.text(x.group(0)),
-                  xml, flags=re.S)
+                  xml, flags=re.DOTALL)
 
 
 def scrub_properties(xml, m):
     for tag in PROPERTY_TAGS:
-        xml, n = re.subn(r"(<%s\b[^>]*>).*?(</%s>)" % (tag, tag), r"\1redacted\2", xml, flags=re.S)
+        xml, n = re.subn(r"(<%s\b[^>]*>).*?(</%s>)" % (tag, tag), r"\1redacted\2", xml, flags=re.DOTALL)
         m.count["properties"] += n
     return xml
 
 
 def scrub_comments(xml, m):
-    xml = re.sub(r"<author>.*?</author>", "<author>redacted</author>", xml, flags=re.S)
-    xml, n = re.subn(r"<t\b[^>/]*>.*?</t>", "<t>redacted</t>", xml, flags=re.S)
+    xml = re.sub(r"<author>.*?</author>", "<author>redacted</author>", xml, flags=re.DOTALL)
+    xml, n = re.subn(r"<t\b[^>/]*>.*?</t>", "<t>redacted</t>", xml, flags=re.DOTALL)
     m.count["comments"] += n
     return xml
 
 
 def scrub_threaded_comments(xml, m):
-    xml, n = re.subn(r"<text>.*?</text>", "<text>redacted</text>", xml, flags=re.S)
+    xml, n = re.subn(r"<text>.*?</text>", "<text>redacted</text>", xml, flags=re.DOTALL)
     m.count["comments"] += n
     return re.sub(r'\b(displayName|userId|providerId)="[^"]*"', r'\1="redacted"', xml)
 
 
 def scrub_chart(xml, m):
-    xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.S)  # saved data copies
-    xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.S)  # titles, labels
+    xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.DOTALL)  # saved data copies
+    xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)  # titles, labels
     m.count["charts"] += n1 + n2
     return xml
 

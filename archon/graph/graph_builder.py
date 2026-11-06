@@ -23,20 +23,20 @@ REF_RE = re.compile(
         \$?([A-Za-z]{1,3})\$?(\d+)
         (?::\$?([A-Za-z]{1,3})\$?(\d+))?
         (?![\w(!])""",
-    re.X,
+    re.VERBOSE,
 )
 PROC_RE = re.compile(
-    r"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?:Sub|Function)\s+(\w+)", re.I)
-IF_THEN_RE = re.compile(r"^\s*If\b.*?\bThen\s+(.+)$", re.I)
+    r"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?:Sub|Function)\s+(\w+)", re.IGNORECASE)
+IF_THEN_RE = re.compile(r"^\s*If\b.*?\bThen\s+(.+)$", re.IGNORECASE)
 SKIP_RE = re.compile(
     r"^\s*(If|ElseIf|While|Do|Loop|Case|Dim|Const|For|Debug|Select|With|Set|Call|Option|Rem)\b",
-    re.I)
+    re.IGNORECASE)
 STATIC_LHS_RE = re.compile(
     r'^(?:ThisWorkbook\.)?'
     r'(?:(?:Worksheets|Sheets)\s*\(\s*"([^"]+)"\s*\)\s*\.)?'
     r'(?:ActiveSheet\.)?'
     r'(Range|Cells)\s*\(([^()]*)\)\s*(?:\.(?:Value2?|Formula\w*))?\s*$',
-    re.I,
+    re.IGNORECASE,
 )
 RANGE_ARG_RE = re.compile(
     r'^"\s*(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)\s*"$')
@@ -151,9 +151,9 @@ def _lhs_of_assignment(code):
 
 
 def _is_write(lhs):
-    if re.search(r"\b(Range|Cells)\s*\(", lhs, re.I):
+    if re.search(r"\b(Range|Cells)\s*\(", lhs, re.IGNORECASE):
         return True
-    if re.search(r"\.(Value2?|Formula\w*)\s*$", lhs.strip(), re.I):
+    if re.search(r"\.(Value2?|Formula\w*)\s*$", lhs.strip(), re.IGNORECASE):
         return True
     return lhs.strip().startswith("[")
 
