@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-Node = "BinOp | UnaryOp | Func | Ref | Lit"
-
 
 @dataclass(frozen=True, slots=True)
 class Lit:
@@ -63,3 +61,6 @@ class Func:
 
     name: str
     args: tuple["Node", ...]
+
+
+Node = BinOp | UnaryOp | Func | Ref | Lit
