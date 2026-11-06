@@ -11,7 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from archon.scrubber import scrubber  # noqa: E402
+from archon.scrubber import scrubber
 
 SCRIPT = os.path.join(ROOT, "scrubber.py")
 
