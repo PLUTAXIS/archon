@@ -316,6 +316,17 @@ class TestArrays(unittest.TestCase):
 class TestErrors(unittest.TestCase):
     """Malformed formulas raise ParseError."""
 
+    def test_unterminated_string_raises_parse_error(self):
+        """A TokenizeError from the lexer surfaces as ParseError."""
+        with self.assertRaises(ParseError):
+            parse("='abc")
+
+    def test_deep_nesting_raises_parse_error(self):
+        """A RecursionError from deep nesting surfaces as ParseError."""
+        formula = "=" + "(" * 2000 + "1" + ")" * 2000
+        with self.assertRaises(ParseError):
+            parse(formula)
+
     def test_unexpected_token(self):
         """A stray ')' is rejected."""
         with self.assertRaises(ParseError):
