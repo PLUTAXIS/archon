@@ -72,11 +72,15 @@ def parse(formula: str) -> Node:
 
 
 class _Parser:
+    """Recursive-descent parser over a token list."""
+
     def __init__(self, tokens: list[Token]) -> None:
+        """Start parsing at the first token of the stream."""
         self._tokens = tokens
         self._pos = 0
 
     def parse(self) -> Node:
+        """Parse the whole token stream and require it to be fully consumed."""
         node = self._comparison()
         self._expect(TokenType.EOF)
         return node
@@ -84,6 +88,7 @@ class _Parser:
     # --- precedence levels, loosest to tightest in call order -----------
 
     def _comparison(self) -> Node:
+        """Comparison operators (= <> < > <= >=), the loosest level."""
         left = self._concat()
         while self._peek().type == TokenType.OP and self._peek().text in _COMPARISON_OPS:
             op = self._advance().text
@@ -92,6 +97,7 @@ class _Parser:
         return left
 
     def _concat(self) -> Node:
+        """String concatenation with '&'."""
         left = self._add_sub()
         while self._peek().type == TokenType.OP and self._peek().text == "&":
             self._advance()
@@ -100,6 +106,7 @@ class _Parser:
         return left
 
     def _add_sub(self) -> Node:
+        """Binary '+' and '-', left-associative."""
         left = self._mul_div()
         while self._peek().type == TokenType.OP and self._peek().text in ("+", "-"):
             op = self._advance().text
@@ -108,6 +115,7 @@ class _Parser:
         return left
 
     def _mul_div(self) -> Node:
+        """Binary '*' and '/', left-associative."""
         left = self._exponent()
         while self._peek().type == TokenType.OP and self._peek().text in ("*", "/"):
             op = self._advance().text
@@ -154,6 +162,7 @@ class _Parser:
     # --- primary expressions ---------------------------------------------
 
     def _primary(self) -> Node:
+        """Literals, refs, parenthesised groups, function calls and arrays."""
         tok = self._peek()
 
         if tok.type == TokenType.NUMBER:
@@ -180,15 +189,13 @@ class _Parser:
         if tok.type == TokenType.SHEET_NAME:
             sheet_tok = self._advance()
             self._expect(TokenType.BANG)
-            ref_tok = self._expect(TokenType.REF)
-            return self._make_ref(ref_tok, sheet=_unquote_sheet(sheet_tok.text))
+            return self._sheet_qualified(_unquote_sheet(sheet_tok.text))
 
         if tok.type == TokenType.IDENTIFIER:
             ident_tok = self._advance()
             if self._peek().type == TokenType.BANG:
                 self._advance()
-                ref_tok = self._expect(TokenType.REF)
-                return self._make_ref(ref_tok, sheet=ident_tok.text)
+                return self._sheet_qualified(ident_tok.text)
             if self._peek().type == TokenType.LPAREN:
                 return self._func_call(ident_tok.text)
             # Bare defined-name reference — see module docstring's known
@@ -204,6 +211,7 @@ class _Parser:
         )
 
     def _func_call(self, name: str) -> Node:
+        """Parse a function call's argument list after its name."""
         self._expect(TokenType.LPAREN)
         args: list[Node] = []
         if self._peek().type != TokenType.RPAREN:
@@ -215,6 +223,7 @@ class _Parser:
         return Func(name=name, args=tuple(args))
 
     def _array_literal(self) -> Node:
+        """Parse {a,b;c,d} into synthetic ARRAY / ARRAY_ROW nodes."""
         self._expect(TokenType.LBRACE)
         rows: list[list[Node]] = [[]]
         if self._peek().type != TokenType.RBRACE:
@@ -228,21 +237,33 @@ class _Parser:
         row_nodes = [Func(name="ARRAY_ROW", args=tuple(row)) for row in rows]
         return Func(name="ARRAY", args=tuple(row_nodes))
 
+    def _sheet_qualified(self, sheet: str) -> Ref:
+        """Parse what follows 'Sheet!': a cell/range ref or a defined name."""
+        if self._peek().type == TokenType.IDENTIFIER:
+            name = self._advance().text
+            return Ref(sheet=sheet, r1c1=name, absolute=(False, False))
+        ref_tok = self._expect(TokenType.REF)
+        return self._make_ref(ref_tok, sheet=sheet)
+
     def _make_ref(self, ref_tok: Token, sheet: str | None) -> Ref:
+        """Build a Ref node, recording its absolute-reference flags."""
         row_abs, col_abs = _ref_absolute_flags(ref_tok.text)
         return Ref(sheet=sheet, r1c1=ref_tok.text, absolute=(row_abs, col_abs))
 
     # --- token-stream helpers ---------------------------------------------
 
     def _peek(self) -> Token:
+        """Return the current token without consuming it."""
         return self._tokens[self._pos]
 
     def _advance(self) -> Token:
+        """Consume and return the current token."""
         tok = self._tokens[self._pos]
         self._pos += 1
         return tok
 
     def _expect(self, type_: TokenType) -> Token:
+        """Consume a token of the given type or raise ParseError."""
         tok = self._peek()
         if tok.type != type_:
             raise ParseError(

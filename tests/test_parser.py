@@ -262,6 +262,22 @@ class TestPrecedence(unittest.TestCase):
             )
 
 
+class TestSheetQualifiedNames(unittest.TestCase):
+    """Defined names qualified by a sheet."""
+
+    def test_unquoted_sheet_defined_name(self):
+        """Sheet1!MyRange keeps the sheet and the raw name."""
+        self.assertEqual(
+            parse("=Sheet1\x21MyRange"), ref("MyRange", sheet="Sheet1")
+        )
+
+    def test_quoted_sheet_defined_name(self):
+        """A quoted sheet name works with a defined name too."""
+        self.assertEqual(
+            parse("='My Sheet'\x21MyRange"), ref("MyRange", sheet="My Sheet")
+        )
+
+
 class TestArrays(unittest.TestCase):
     """Array literals (synthetic ARRAY / ARRAY_ROW funcs)."""
 
