@@ -132,7 +132,10 @@ def to_r1c1(formula: str, cell: str) -> str:
     cur_row, cur_col = parse_address(cell)
 
     def convert(code: str) -> str:
+        """Rewrite all non-literal reference tokens in one code segment."""
+
         def repl(m: re.Match[str]) -> str:
+            """Render the matched A1 reference or range as R1C1 text."""
             if m.group("cell"):
                 col = col_to_num(m.group("ccol"))
                 row = int(m.group("crow"))
@@ -166,6 +169,13 @@ def to_r1c1(formula: str, cell: str) -> str:
     return _map_code(formula, convert)
 
 
+# Three forms must be matched for the inverse conversion, because to_r1c1
+# can emit each of them: a full "RxCy" token, a column-only token (from a
+# whole-column range like "C[-1]"), and a row-only token (from a whole-row
+# range like "R[-3]"). Each alternative is tried in order; the literal
+# letters actually present in the matched text ("R" and/or "C") tell repl()
+# which alternative fired, since Python's re module does not support
+# reusing one group name across alternatives.
 _R1C1 = re.compile(
     r"""
     (?<![A-Za-z0-9_.])
@@ -212,9 +222,13 @@ def to_a1(formula: str, cell: str) -> str:
     cur_row, cur_col = parse_address(cell)
 
     def convert(code: str) -> str:
+        """Rewrite all R1C1 tokens in one code segment back to A1 text."""
+
         def repl(m: re.Match[str]) -> str:
+            """Render the matched R1C1 token as A1 text."""
             text = m.group(0)
-            if text.startswith("R") and "C" in text:
+            # Determine which alternative matched from the literal letters present.
+            if m.group("rc_r") is not None or m.group("rc_c") is not None or text.startswith("RC") or (text.startswith("R") and "C" in text):
                 row_res = _axis(m.group("rc_r"), cur_row, MAX_ROW)
                 col_res = _axis(m.group("rc_c"), cur_col, MAX_COL)
                 if row_res is None or col_res is None:
