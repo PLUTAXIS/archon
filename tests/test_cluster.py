@@ -1,3 +1,5 @@
+"""Tests for archon.cluster.engine (formula clustering)."""
+
 import json
 import tempfile
 import unittest
@@ -12,6 +14,7 @@ from archon.cluster.engine import (
 
 
 def sample_rows(n: int = 5000) -> list[tuple[str, str, str]]:
+    """n dragged rows in three columns, plus two planted errors and a total."""
     rows = []
     for r in range(2, n + 2):
         if r != 4312:
@@ -73,6 +76,32 @@ class TestLoadFormulas(unittest.TestCase):
             path = Path(tmp) / "extracted_formulas.json"
             path.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual(load_formulas(path), [("Main", "C1", "=A1*B1")])
+
+    def test_null_formula_becomes_empty_string_not_literal_none(self) -> None:
+        data = [{"sheet": "Main", "cell_reference": "C1", "formula": None}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "extracted_formulas.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(load_formulas(path), [("Main", "C1", "")])
+
+    def test_non_list_json_raises_value_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "extracted_formulas.json"
+            path.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_formulas(path)
+
+    def test_missing_field_raises_value_error_naming_index(self) -> None:
+        data = [
+            {"sheet": "Main", "cell_reference": "C1", "formula": "=A1*B1"},
+            {"sheet": "Main", "cell_reference": "C2"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "extracted_formulas.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                load_formulas(path)
+            self.assertIn("index 1", str(ctx.exception))
 
 
 if __name__ == "__main__":

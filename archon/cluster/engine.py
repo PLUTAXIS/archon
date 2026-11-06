@@ -1,3 +1,12 @@
+"""Formula clustering: group cells that share the same relative (R1C1) formula.
+
+Input rows are (sheet, address, content) where content is either a formula
+("=B2*C2") or a hardcoded value ("145000").
+
+    clusters, constants = cluster_cells(rows)
+    summarise(clusters, constants)["compression_ratio"]
+"""
+
 from __future__ import annotations
 
 import json
@@ -79,6 +88,19 @@ def load_formulas(path: str | Path) -> list[Row]:
 
     Expects a JSON array of objects with "sheet", "cell_reference", and
     "formula" keys, and returns them as (sheet, address, content) tuples.
+    A null "formula" (used by some extractors for blank cells) is treated
+    as an empty string rather than the literal text "None". Raises
+    ValueError, naming the bad entry's index, if the file is not a JSON
+    array or an entry is missing a required field.
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    return [(d["sheet"], d["cell_reference"], d["formula"]) for d in data]
+    if not isinstance(data, list):
+        raise ValueError("Expected a JSON array of formula records")
+    rows: list[Row] = []
+    for i, d in enumerate(data):
+        try:
+            content = d["formula"]
+            rows.append((d["sheet"], d["cell_reference"], "" if content is None else content))
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"Bad formula record at index {i}: {d!r}") from exc
+    return rows
