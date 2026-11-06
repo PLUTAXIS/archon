@@ -32,11 +32,13 @@ ROUND_TRIP = [c for c in CASES if "$A:$C" not in c[0]]
 
 class TestToR1C1(unittest.TestCase):
     def test_cases(self) -> None:
+        """Each (formula, cell, expected R1C1) case converts exactly as expected."""
         for a1, cell, expected in CASES:
             with self.subTest(formula=a1, cell=cell):
                 self.assertEqual(to_r1c1(a1, cell), expected)
 
     def test_round_trip(self) -> None:
+        """Converting to R1C1 and back to A1 reproduces the original formula."""
         for a1, cell, _ in ROUND_TRIP:
             with self.subTest(formula=a1, cell=cell):
                 back = to_a1(to_r1c1(a1, cell), cell)
@@ -55,6 +57,7 @@ class TestToR1C1(unittest.TestCase):
             parse_address("not-a-cell")
 
     def test_out_of_bounds_address_raises(self) -> None:
+        """Syntactically valid but out-of-range addresses (row 0, column > XFD) are rejected."""
         with self.assertRaises(ValueError):
             parse_address("A0")
         with self.assertRaises(ValueError):
@@ -63,6 +66,11 @@ class TestToR1C1(unittest.TestCase):
     def test_column_only_range_round_trips(self) -> None:
         r1c1 = to_r1c1("=SUM(A:A)", "B1")
         self.assertEqual(to_a1(r1c1, "B1"), "=SUM(A:A)")
+
+    def test_absolute_whole_column_range_round_trips_with_dollar_signs(self) -> None:
+        """An absolute whole-column range keeps its $ markers through a round trip."""
+        r1c1 = to_r1c1("=SUM($A:$C)", "D1")
+        self.assertEqual(to_a1(r1c1, "D1"), "=SUM($A:$C)")
 
     def test_row_only_range_round_trips(self) -> None:
         r1c1 = to_r1c1("=SUM(2:2)", "A5")
