@@ -9,6 +9,7 @@ IFERROR is invisible to a record-only scorer.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,6 +21,23 @@ from archon.contracts.graph import Risk
 
 _SCORE_CAP = 100
 _RULES_FILE = Path(__file__).parent / "risk_rules.yaml"
+
+
+@dataclass(frozen=True)
+class RiskComponent:
+    """A single named contribution to the risk score."""
+
+    flag: str
+    points: int
+
+
+@dataclass(frozen=True)
+class RiskResult:
+    """Score plus its printable, sorted breakdown."""
+
+    score: int
+    flags: tuple[str, ...]
+    components: tuple[RiskComponent, ...]
 
 
 class _StrictLoader(yaml.SafeLoader):
