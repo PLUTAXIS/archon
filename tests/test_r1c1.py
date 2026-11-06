@@ -1,3 +1,5 @@
+"""Tests for archon.formula.r1c1 (A1 <-> R1C1 conversion)."""
+
 import unittest
 
 from archon.formula.r1c1 import parse_address, to_a1, to_r1c1
@@ -25,7 +27,7 @@ CASES = [
     ("145000", "D4312", "145000"),
 ]
 
-ROUND_TRIP = [c for c in CASES if not any(s in c[0] for s in ("A:A", "$A:$C", "2:2"))]
+ROUND_TRIP = [c for c in CASES if "$A:$C" not in c[0]]
 
 
 class TestToR1C1(unittest.TestCase):
@@ -51,6 +53,23 @@ class TestToR1C1(unittest.TestCase):
     def test_bad_address_raises(self) -> None:
         with self.assertRaises(ValueError):
             parse_address("not-a-cell")
+
+    def test_out_of_bounds_address_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_address("A0")
+        with self.assertRaises(ValueError):
+            parse_address("XFE1")
+
+    def test_column_only_range_round_trips(self) -> None:
+        r1c1 = to_r1c1("=SUM(A:A)", "B1")
+        self.assertEqual(to_a1(r1c1, "B1"), "=SUM(A:A)")
+
+    def test_row_only_range_round_trips(self) -> None:
+        r1c1 = to_r1c1("=SUM(2:2)", "A5")
+        self.assertEqual(to_a1(r1c1, "A5"), "=SUM(2:2)")
+
+    def test_to_a1_rejects_out_of_bounds_column(self) -> None:
+        self.assertEqual(to_a1("=RC[-1]", "A1"), "=RC[-1]")
 
 
 if __name__ == "__main__":
