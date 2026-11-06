@@ -55,7 +55,7 @@ Known, deliberate gaps (not oversights):
 from __future__ import annotations
 
 from archon.formula.ast import BinOp, Func, Lit, Node, Ref, UnaryOp
-from archon.formula.tokenizer import Token, TokenType, tokenize
+from archon.formula.tokenizer import Token, TokenizeError, TokenType, tokenize
 
 
 class ParseError(ValueError):
@@ -67,8 +67,13 @@ _COMPARISON_OPS = {"=", "<>", "<", ">", "<=", ">="}
 
 def parse(formula: str) -> Node:
     """Parse Excel formula text (with or without a leading '=') into an AST."""
-    tokens = tokenize(formula)
-    return _Parser(tokens).parse()
+    try:
+        tokens = tokenize(formula)
+        return _Parser(tokens).parse()
+    except TokenizeError as exc:
+        raise ParseError(str(exc)) from exc
+    except RecursionError as exc:
+        raise ParseError("Formula is nested too deeply to parse") from exc
 
 
 class _Parser:
