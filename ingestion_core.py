@@ -1,14 +1,16 @@
-import zipfile
-import xml.etree.ElementTree as ET
-import os
-import json
-import openpyxl
-from openpyxl.utils.exceptions import InvalidFileException
-from oletools.olevba import VBA_Parser
-import msoffcrypto
 import hashlib
+import json
+import os
 import platform
 import subprocess
+import xml.etree.ElementTree as ET
+import zipfile
+
+import msoffcrypto
+import openpyxl
+from oletools.olevba import VBA_Parser
+from openpyxl.utils.exceptions import InvalidFileException
+
 
 def is_password_protected(file_path):
     """
@@ -31,8 +33,8 @@ def is_password_protected(file_path):
                 return True
     except msoffcrypto.exceptions.InvalidFileException:
         raise ValueError("Malformed or unsupported file format.")
-    except Exception as e:
-        raise RuntimeError(f"InspectionError: Cannot securely inspect file: {str(e)}")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"InspectionError: Cannot securely inspect file: {e!s}")
     return False
 
 def analyze_workbook_structure(file_path, run_id):
@@ -71,9 +73,9 @@ def analyze_workbook_structure(file_path, run_id):
             return [output_file]
             
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as e:
-        raise ValueError(f"FileFormatError or Malformed workbook structure: {type(e).__name__} - {str(e)}")
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during structure analysis: {str(e)}")
+        raise ValueError(f"FileFormatError or Malformed workbook structure: {type(e).__name__} - {e!s}")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Unexpected error during structure analysis: {e!s}")
 
 def extract_formulas(file_path, run_id):
     """
@@ -113,9 +115,9 @@ def extract_formulas(file_path, run_id):
             json.dump(all_formulas, json_file, indent=4)
         return [output_file]
     except InvalidFileException as e:
-        raise ValueError(f"FileFormatError in openpyxl: {str(e)}")
-    except Exception as e:
-        raise RuntimeError(f"Formula extraction failed: {str(e)}")
+        raise ValueError(f"FileFormatError in openpyxl: {e!s}")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Formula extraction failed: {e!s}")
 
 def extract_vba_macros(file_path, run_id):
     """
@@ -160,8 +162,8 @@ def extract_vba_macros(file_path, run_id):
                 generated_files.append(meta_file)
                 
         return generated_files
-    except Exception as e:
-        raise RuntimeError(f"VBA macro extraction failed explicitly: {str(e)}")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"VBA macro extraction failed explicitly: {e!s}")
 
 def extract_access_db(file_path, run_id):
     """
@@ -193,8 +195,8 @@ def extract_access_db(file_path, run_id):
             return [output_file]
         except subprocess.TimeoutExpired:
             raise RuntimeError("Access extraction timed out (Hung Process).")
-        except Exception as e:
-            raise RuntimeError(f"mdbtools extraction failed in Linux environment: {str(e)}")
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"mdbtools extraction failed in Linux environment: {e!s}")
             
     else:
         import pyodbc
@@ -220,5 +222,5 @@ def extract_access_db(file_path, run_id):
             elif "exclusive" in err_text or "in use" in err_text:
                 raise RuntimeError("Access Database is exclusively locked by another process.")
             raise ValueError(f"Database connection failed: {err_text}")
-        except Exception as e:
-            raise RuntimeError(f"Access extraction failed: {str(e)}")
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"Access extraction failed: {e!s}")
