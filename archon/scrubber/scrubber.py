@@ -140,7 +140,7 @@ def pick_handler(name):
         return scrub_shared_strings
     if name in ("docProps/core.xml", "docProps/app.xml"):
         return scrub_properties
-    if re.fullmatch(r"xl/comments\d*\.xml", name):
+    if re.fullmatch(r"xl/comments(?:/comment)?\d*\.xml", name):
         return scrub_comments
     if name.startswith(("xl/threadedComments/", "xl/persons/")):
         return scrub_threaded_comments
