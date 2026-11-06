@@ -262,6 +262,24 @@ class TestPrecedence(unittest.TestCase):
             )
 
 
+class TestSheetQualifiedRanges(unittest.TestCase):
+    """Sheet scope on range corners."""
+
+    def test_sheet_propagates_to_unqualified_corner(self):
+        """Sheet1!A:A gives both corners sheet='Sheet1'."""
+        self.assertEqual(
+            parse("=Sheet1\x21A:A"),
+            BinOp(op=":", left=ref("A", sheet="Sheet1"), right=ref("A", sheet="Sheet1")),
+        )
+
+    def test_explicit_sheet_on_second_corner_kept(self):
+        """Sheet1!A1:Sheet2!B2 keeps each corner's own sheet."""
+        self.assertEqual(
+            parse("=Sheet1\x21A1:Sheet2\x21B2"),
+            BinOp(op=":", left=ref("A1", sheet="Sheet1"), right=ref("B2", sheet="Sheet2")),
+        )
+
+
 class TestSheetQualifiedNames(unittest.TestCase):
     """Defined names qualified by a sheet."""
 

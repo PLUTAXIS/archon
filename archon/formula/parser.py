@@ -156,6 +156,13 @@ class _Parser:
         while self._peek().type == TokenType.COLON:
             self._advance()
             right = self._primary()
+            if (
+                isinstance(left, Ref)
+                and isinstance(right, Ref)
+                and left.sheet is not None
+                and right.sheet is None
+            ):
+                right = Ref(sheet=left.sheet, r1c1=right.r1c1, absolute=right.absolute)
             left = BinOp(op=":", left=left, right=right)
         return left
 
