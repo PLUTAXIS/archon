@@ -80,9 +80,11 @@ _SINGLE_CHAR_OPS = {
 # A cell or range corner, e.g. A1, $A$1, A, 1 (whole col/row), XFD1048576.
 _REF_RE_SOURCE = r"\$?[A-Za-z]{1,3}\$?\d{1,7}|\$?[A-Za-z]{1,3}(?![A-Za-z0-9_])|\$?\d{1,7}(?!\d)"
 
-_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?")
+_NUMBER_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?", re.ASCII
+)
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
-_REF_RE = re.compile(_REF_RE_SOURCE)
+_REF_RE = re.compile(_REF_RE_SOURCE, re.ASCII)
 _QUOTED_SHEET_RE = re.compile(r"'(?:[^']|'')*'")
 
 
@@ -93,9 +95,9 @@ def tokenize(formula: str) -> list[Token]:
     TokenizeError for an unterminated string/quoted-sheet-name literal or an
     unrecognized character.
     """
-    text = formula[1:] if formula.startswith("=") else formula
+    text = formula
     tokens: list[Token] = []
-    i = 0
+    i = 1 if formula.startswith("=") else 0
     n = len(text)
 
     while i < n:
@@ -119,11 +121,24 @@ def tokenize(formula: str) -> list[Token]:
             i = m.end()
             continue
 
-        if ch.isdigit() or (ch == "." and i + 1 < n and text[i + 1].isdigit()):
+        if ch in "0123456789" or (
+            ch == "." and i + 1 < n and text[i + 1] in "0123456789"
+        ):
             m = _NUMBER_RE.match(text, i)
             assert m is not None
-            tokens.append(Token(TokenType.NUMBER, m.group(), i))
-            i = m.end()
+            lexeme = m.group()
+            end = m.end()
+            next_char = text[end] if end < n else ""
+            prev_was_colon = bool(tokens) and tokens[-1].type == TokenType.COLON
+            is_whole_row = (
+                lexeme.isdigit()
+                and len(lexeme) <= 7
+                and (next_char == ":" or prev_was_colon)
+            )
+            tokens.append(
+                Token(TokenType.REF if is_whole_row else TokenType.NUMBER, lexeme, i)
+            )
+            i = end
             continue
 
         if ch == "<" and i + 1 < n and text[i + 1] in "=>":
@@ -138,13 +153,22 @@ def tokenize(formula: str) -> list[Token]:
         if ch.isalpha() or ch == "$" or ch == "_":
             ref_match = _REF_RE.match(text, i)
             ident_match = _IDENT_RE.match(text, i)
+            # Prefer the longer match; a plain identifier like "TRUE" or a
+            # function name "SUM" should not be mistaken for a reference,
+            # but something like "A1" should win over treating it as a bare
+            # identifier. Reference wins when it matches the identifier's
+            # full span AND looks like row/col shape (handled by preferring
+            # longest, then ref on tie since ref requires digit or bounded
+            # letters).
             if ref_match and ident_match and ref_match.end() == ident_match.end():
                 candidate = ref_match.group()
                 upper = candidate.upper()
                 end = ident_match.end()
                 next_char = text[end] if end < n else ""
                 prev_was_colon = bool(tokens) and tokens[-1].type == TokenType.COLON
-                if upper in ("TRUE", "FALSE"):
+                if next_char == "(":
+                    tokens.append(Token(TokenType.IDENTIFIER, candidate, i))
+                elif upper in ("TRUE", "FALSE"):
                     tokens.append(Token(TokenType.BOOLEAN, candidate, i))
                 elif _looks_like_ref(candidate) or (
                     candidate.isalpha() and (next_char == ":" or prev_was_colon)
