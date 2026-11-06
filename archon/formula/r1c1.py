@@ -61,7 +61,7 @@ _A1 = re.compile(
         (?<![A-Za-z0-9_.$])
         (?P<cabs>\$?)(?P<ccol>[A-Za-z]{1,3})
         (?P<rabs>\$?)(?P<crow>\d+)
-        (?![A-Za-z0-9_(!.])
+        (?![A-Za-z0-9_(!.]|:[A-Za-z0-9_.]+!)
     )
   | (?P<colrng>
         (?<![A-Za-z0-9_.$])
