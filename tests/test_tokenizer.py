@@ -144,8 +144,38 @@ class TestTokenize(unittest.TestCase):
 
     def test_every_token_has_correct_position(self):
         tokens = tokenize("=A1+B2")
+        # positions are relative to the ORIGINAL formula, '=' included
         non_eof = [t for t in tokens if t.type != TokenType.EOF]
-        self.assertEqual([t.pos for t in non_eof], [0, 2, 3])
+        self.assertEqual([t.pos for t in non_eof], [1, 3, 4])
+
+    def test_error_position_is_relative_to_original_formula(self):
+        try:
+            tokenize("=A1@B2")
+        except TokenizeError as exc:
+            self.assertIn("position 3", str(exc))
+        else:
+            self.fail("expected TokenizeError")
+
+    def test_unprefixed_whole_row_range(self):
+        tokens = tokenize("=SUM(1:3)")
+        refs = [t.text for t in tokens if t.type == TokenType.REF]
+        self.assertEqual(refs, ["1", "3"])
+
+    def test_unicode_digit_raises_tokenize_error_not_assertion(self):
+        with self.assertRaises(TokenizeError):
+            tokenize("=1+\u00b2")  # superscript two, not an ASCII digit
+
+    def test_function_name_shaped_like_ref_is_identifier(self):
+        tokens = tokenize("=LOG10(A1)")
+        self.assertEqual(tokens[0].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[0].text, "LOG10")
+
+    def test_function_after_colon_is_identifier_not_ref(self):
+        tokens = tokenize("=SUM(A1:IF(B1,C1,D1))")
+        ident_texts = [t.text for t in tokens if t.type == TokenType.IDENTIFIER]
+        self.assertIn("IF", ident_texts)
+        ref_texts = [t.text for t in tokens if t.type == TokenType.REF]
+        self.assertNotIn("IF", ref_texts)
 
     def test_eof_token_present_at_end(self):
         tokens = tokenize("=1")
