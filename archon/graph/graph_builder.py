@@ -151,6 +151,7 @@ def _lhs_of_assignment(code):
 
 
 def _is_write(lhs):
+    """Return True if the assignment target writes to a worksheet cell."""
     if re.search(r"\b(Range|Cells)\s*\(", lhs, re.IGNORECASE):
         return True
     if re.search(r"\.(Value2?|Formula\w*)\s*$", lhs.strip(), re.IGNORECASE):
