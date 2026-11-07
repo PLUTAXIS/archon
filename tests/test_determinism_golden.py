@@ -9,7 +9,7 @@ import pathlib
 
 HERE = pathlib.Path(__file__).parent
 FIXTURES = sorted((HERE.parent).rglob("*.json"))
-MANIFEST = HERE / "hashes.txt"
+MANIFEST = HERE / "golden" / "hashes.txt"
 
 
 def canonical_hash(path: pathlib.Path) -> str:
