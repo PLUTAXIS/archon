@@ -3,6 +3,7 @@ import ProtectedRoute from "./components/ProtectedRoute"
 import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
 import ReportPreviewer from "./pages/ReportPreviewer"
+import AuditTrail from "./pages/AuditTrail"
 
 function App() {
   return (
@@ -21,6 +22,14 @@ function App() {
         element={
           <ProtectedRoute>
             <ReportPreviewer />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/audit"
+        element={
+          <ProtectedRoute>
+            <AuditTrail />
           </ProtectedRoute>
         }
       />
