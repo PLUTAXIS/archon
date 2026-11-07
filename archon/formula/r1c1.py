@@ -253,3 +253,162 @@ def to_a1(formula: str, cell: str) -> str:
         return _R1C1.sub(repl, code)
 
     return _map_code(formula, convert)
+
+
+# --- AST-based R1C1 translation -------------------------------------------
+#
+# The functions above are the original, pre-parser, regex/string-based
+# A1<->R1C1 text converter (still used by cluster/engine.py). The function
+# below is the new AST-based translation path: given a parsed formula (see
+# archon.formula.parser.parse) and the anchor cell the formula lives in, it
+# walks the tree and rewrites every Ref node's r1c1 field from raw A1 text
+# (what the parser currently stores there, see parser.py's module docstring)
+# into real R1C1 notation. A defined name (a Ref whose text doesn't match a
+# cell/column/row address shape) is left untouched, since it isn't a
+# cell/range reference and has no R1C1 form -- this mirrors the parser's
+# own documented gap rather than hiding it.
+#
+# A sheet-qualified range endpoint ("Sheet1!A1:Sheet1!B1") is handled
+# correctly here, for real, because the parser already disambiguated it at
+# parse time -- this was the long-standing regression the old text-based
+# to_r1c1() could never fix without breaking "Q1:Q3!A1" (see that
+# function's docstring).
+
+from archon.formula.ast import BinOp, Func, Lit, Node, Ref, UnaryOp
+
+_FULL_ADDR = re.compile(r"(\$?)([A-Za-z]{1,3})(\$?)(\d+)")
+_COL_ONLY = re.compile(r"(\$?)([A-Za-z]{1,3})")
+_ROW_ONLY = re.compile(r"(\$?)(\d+)")
+
+
+def _parse_ref_corner(text: str) -> tuple[int | None, int | None, bool, bool]:
+    """Parse one Ref node's raw A1 corner text into (row, col, row_abs, col_abs).
+
+    row and/or col are None for a whole-column ("A") or whole-row ("1")
+    reference. Returns (None, None, False, False) for text that isn't a
+    cell/column/row address at all (a defined name) -- the caller leaves
+    such a Ref unconverted.
+    """
+    m = _FULL_ADDR.fullmatch(text)
+    if m:
+        col_dollar, letters, row_dollar, digits = m.groups()
+        row, col = int(digits), col_to_num(letters)
+        if 1 <= row <= MAX_ROW and 1 <= col <= MAX_COL:
+            return row, col, bool(row_dollar), bool(col_dollar)
+        return None, None, False, False
+    m = _COL_ONLY.fullmatch(text)
+    if m:
+        dollar, letters = m.groups()
+        return None, col_to_num(letters), False, bool(dollar)
+    m = _ROW_ONLY.fullmatch(text)
+    if m:
+        dollar, digits = m.groups()
+        return int(digits), None, bool(dollar), False
+    return None, None, False, False
+
+
+def _r1c1_corner_text(text: str, anchor_row: int, anchor_col: int) -> str:
+    """Translate one Ref node's raw A1 corner text into R1C1 text.
+
+    Returns the original text unchanged if it isn't a recognizable
+    cell/column/row address (a defined name) -- see module note above.
+    """
+    row, col, row_abs, col_abs = _parse_ref_corner(text)
+    if row is None and col is None:
+        return text
+
+    row_part = ""
+    if row is not None:
+        if row_abs:
+            row_part = f"R{row}"
+        else:
+            offset = row - anchor_row
+            row_part = "R" if offset == 0 else f"R[{offset}]"
+
+    col_part = ""
+    if col is not None:
+        if col_abs:
+            col_part = f"C{col}"
+        else:
+            offset = col - anchor_col
+            col_part = "C" if offset == 0 else f"C[{offset}]"
+
+    return row_part + col_part
+
+
+def _quote_sheet_if_needed(sheet: str) -> str:
+    """Wrap a sheet name in single quotes if it needs them in formula text."""
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", sheet):
+        return sheet
+    return "'" + sheet.replace("'", "''") + "'"
+
+
+def _is_ambiguous_bare_name(text: str) -> bool:
+    """True for column/row-only shaped text with no '$' and no digits+letters
+    together (e.g. "TAX", "3") -- this shape is indistinguishable from a
+    real whole-column/whole-row range endpoint by text alone. A '$'-prefixed
+    token (e.g. "$A", "$3") can never be a defined name, so it is never
+    ambiguous. A full "A1"-shaped address is never ambiguous either.
+    """
+    if text.startswith("$"):
+        return False
+    if _FULL_ADDR.fullmatch(text):
+        return False
+    return bool(_COL_ONLY.fullmatch(text) or _ROW_ONLY.fullmatch(text))
+
+
+def _to_r1c1_ast(node: Node, anchor: tuple[int, int], in_range_corner: bool) -> Node:
+    anchor_row, anchor_col = anchor
+
+    if isinstance(node, Lit):
+        return node
+
+    if isinstance(node, Ref):
+        if not in_range_corner and _is_ambiguous_bare_name(node.r1c1):
+            # Column/row-only shaped text outside of a ':' range is a bare
+            # defined name (e.g. "TAX"), not a whole-column/row reference --
+            # leave it untouched, same as any other defined name.
+            return node
+        new_text = _r1c1_corner_text(node.r1c1, anchor_row, anchor_col)
+        return Ref(sheet=node.sheet, r1c1=new_text, absolute=node.absolute)
+
+    if isinstance(node, UnaryOp):
+        return UnaryOp(
+            op=node.op,
+            operand=_to_r1c1_ast(node.operand, anchor, False),
+            postfix=node.postfix,
+        )
+
+    if isinstance(node, BinOp):
+        corner = node.op == ":"
+        return BinOp(
+            op=node.op,
+            left=_to_r1c1_ast(node.left, anchor, corner),
+            right=_to_r1c1_ast(node.right, anchor, corner),
+        )
+
+    if isinstance(node, Func):
+        return Func(
+            name=node.name,
+            args=tuple(_to_r1c1_ast(arg, anchor, False) for arg in node.args),
+        )
+
+    raise TypeError(f"Unknown AST node type: {type(node).__name__}")
+
+
+def to_r1c1_ast(node: Node, anchor: tuple[int, int]) -> Node:
+    """Rewrite every Ref node in an AST from raw A1 text to real R1C1 text.
+
+    anchor is (row, col) of the cell the formula lives in, 1-based, as
+    returned by parse_address(). Returns a new tree; the input is not
+    mutated (all AST node types here are frozen dataclasses). A Ref that
+    turns out to be a defined name (not a cell/column/row address, or a
+    bare column/row-only-shaped name like "TAX" outside of a ':' range) is
+    passed through with its r1c1 field unchanged. Raises ValueError, rather
+    than an uncaught RecursionError, if the tree is nested too deeply to
+    walk (mirrors parser.parse()'s own RecursionError -> ParseError guard).
+    """
+    try:
+        return _to_r1c1_ast(node, anchor, False)
+    except RecursionError as exc:
+        raise ValueError("Formula AST is nested too deeply to translate") from exc
