@@ -340,42 +340,72 @@ def _quote_sheet_if_needed(sheet: str) -> str:
     return "'" + sheet.replace("'", "''") + "'"
 
 
-def to_r1c1_ast(node: Node, anchor: tuple[int, int]) -> Node:
-    """Rewrite every Ref node in an AST from raw A1 text to real R1C1 text.
-
-    anchor is (row, col) of the cell the formula lives in, 1-based, as
-    returned by parse_address(). Returns a new tree; the input is not
-    mutated (all AST node types here are frozen dataclasses). A Ref that
-    turns out to be a defined name (not a cell/column/row address) is
-    passed through with its r1c1 field unchanged.
+def _is_ambiguous_bare_name(text: str) -> bool:
+    """True for column/row-only shaped text with no '$' and no digits+letters
+    together (e.g. "TAX", "3") -- this shape is indistinguishable from a
+    real whole-column/whole-row range endpoint by text alone. A '$'-prefixed
+    token (e.g. "$A", "$3") can never be a defined name, so it is never
+    ambiguous. A full "A1"-shaped address is never ambiguous either.
     """
+    if text.startswith("$"):
+        return False
+    if _FULL_ADDR.fullmatch(text):
+        return False
+    return bool(_COL_ONLY.fullmatch(text) or _ROW_ONLY.fullmatch(text))
+
+
+def _to_r1c1_ast(node: Node, anchor: tuple[int, int], in_range_corner: bool) -> Node:
     anchor_row, anchor_col = anchor
 
     if isinstance(node, Lit):
         return node
 
     if isinstance(node, Ref):
+        if not in_range_corner and _is_ambiguous_bare_name(node.r1c1):
+            # Column/row-only shaped text outside of a ':' range is a bare
+            # defined name (e.g. "TAX"), not a whole-column/row reference --
+            # leave it untouched, same as any other defined name.
+            return node
         new_text = _r1c1_corner_text(node.r1c1, anchor_row, anchor_col)
         return Ref(sheet=node.sheet, r1c1=new_text, absolute=node.absolute)
 
     if isinstance(node, UnaryOp):
         return UnaryOp(
             op=node.op,
-            operand=to_r1c1_ast(node.operand, anchor),
+            operand=_to_r1c1_ast(node.operand, anchor, False),
             postfix=node.postfix,
         )
 
     if isinstance(node, BinOp):
+        corner = node.op == ":"
         return BinOp(
             op=node.op,
-            left=to_r1c1_ast(node.left, anchor),
-            right=to_r1c1_ast(node.right, anchor),
+            left=_to_r1c1_ast(node.left, anchor, corner),
+            right=_to_r1c1_ast(node.right, anchor, corner),
         )
 
     if isinstance(node, Func):
         return Func(
             name=node.name,
-            args=tuple(to_r1c1_ast(arg, anchor) for arg in node.args),
+            args=tuple(_to_r1c1_ast(arg, anchor, False) for arg in node.args),
         )
 
     raise TypeError(f"Unknown AST node type: {type(node).__name__}")
+
+
+def to_r1c1_ast(node: Node, anchor: tuple[int, int]) -> Node:
+    """Rewrite every Ref node in an AST from raw A1 text to real R1C1 text.
+
+    anchor is (row, col) of the cell the formula lives in, 1-based, as
+    returned by parse_address(). Returns a new tree; the input is not
+    mutated (all AST node types here are frozen dataclasses). A Ref that
+    turns out to be a defined name (not a cell/column/row address, or a
+    bare column/row-only-shaped name like "TAX" outside of a ':' range) is
+    passed through with its r1c1 field unchanged. Raises ValueError, rather
+    than an uncaught RecursionError, if the tree is nested too deeply to
+    walk (mirrors parser.parse()'s own RecursionError -> ParseError guard).
+    """
+    try:
+        return _to_r1c1_ast(node, anchor, False)
+    except RecursionError as exc:
+        raise ValueError("Formula AST is nested too deeply to translate") from exc
