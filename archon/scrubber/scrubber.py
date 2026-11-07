@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
 
-WHAT IT CHANGES
-  * Text in cells, comments and file properties -> dummy text (Text_1, Text_2 ...)
-  * Numbers typed into cells                    -> random digits, same shape
-  * Saved results of formulas                   -> removed (Excel recalculates them)
-  * Text and cached values inside charts        -> removed or replaced
-WHAT IT KEEPS (on purpose, we need the skeleton)
-  * Formulas, sheet names, sheet layout, and VBA macro code
+WHAT IT CHANGES: text (cells/comments/properties) -> dummy text; typed numbers ->
+random digits, same shape; saved formula results -> removed (Excel recalculates);
+text/cached values inside charts -> removed or replaced.
+WHAT IT KEEPS (on purpose): formulas, sheet names, sheet layout, VBA macro code.
 
 SAFETY: standard library only. Reads one file, writes one NEW file, never
 changes your original, and never opens a network connection.
@@ -31,6 +28,7 @@ REVIEW = {
     "embeddings": "embedded files",
     "xl/tables/": "table column names (formulas need them)",
     "docProps/custom": "custom file properties",
+    "xl/diagrams/": "SmartArt diagrams (their text is not masked)",
 }
 # File properties that often hold real names.
 PROPERTY_TAGS = ("dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject",
@@ -38,25 +36,42 @@ PROPERTY_TAGS = ("dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject",
 # One cell, either <c .../> (empty) or <c ...>...</c>.
 CELL = re.compile(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", re.DOTALL)
 
-
 class ScrubError(Exception):
     """A problem we can explain to the user in plain words."""
 
-
 class Masker:
     """Creates dummy values. The same original always gets the same dummy."""
-
     def __init__(self):
         self.rng = random.Random(secrets.token_bytes(16))  # new random seed every run
-        self.texts, self.numbers = {}, {}
+        self.texts, self.numbers, self.dates = {}, {}, {}
         self.count = dict.fromkeys(
-            ("strings", "numbers", "formula_results", "comments", "properties", "charts"), 0)
+            ("strings", "numbers", "formula_results", "comments", "properties", "charts", "drawings"), 0)
 
     def text(self, original):
         self.count["strings"] += 1
         if original not in self.texts:
             self.texts[original] = "Text_%d" % (len(self.texts) + 1)
         return self.texts[original]
+
+    def date(self, original):
+        """2026-03-14T09:30:00Z -> a different but valid date/time in the same format."""
+        self.count["strings"] += 1
+        if original not in self.dates:
+            r = self.rng
+            p = re.fullmatch(r"\d{4}-\d{2}-\d{2}(?P<t>T\d{2}:\d{2}(?::\d{2}(?P<f>\.\d+)?)?)?"
+                            r"(?P<z>Z|[+-]\d{2}:\d{2})?", original.strip())
+            out = "2000-01-01"  # not a shape we know: a fixed valid date reveals nothing
+            if p:
+                out = "%04d-%02d-%02d" % (r.randint(2000, 2029), r.randint(1, 12), r.randint(1, 28))
+                if p.group("t"):
+                    out += "T%02d:%02d" % (r.randint(0, 23), r.randint(0, 59))
+                    if p.group("t").count(":") == 2:
+                        out += ":%02d" % r.randint(0, 59)
+                    if p.group("f"):
+                        out += "." + "".join(str(r.randint(0, 9)) for _ in p.group("f")[1:])
+                out += p.group("z") or ""
+            self.dates[original] = out
+        return self.dates[original]
 
     def number(self, original):
         """145000.5 -> e.g. 830217.2 (same digits, same decimals, same exponent)."""
@@ -77,7 +92,6 @@ class Masker:
                 self.numbers[original] = "".join(out) + exponent
         return self.numbers[original]
 
-
 def scrub_sheet(xml, m):
     """Redact cell values in a worksheet XML part, keeping formulas and structure."""
     def fix_cell(match):
@@ -96,23 +110,24 @@ def scrub_sheet(xml, m):
             elif kind == "inlineStr":  # text stored inside the cell
                 body = re.sub(r"<is>.*?</is>",
                               lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.DOTALL)
+            elif kind in ("str", "d"):  # text, or an ISO date, stored directly in <v>
+                mask = m.date if kind == "d" else m.text  # a date stays a (dummy) date
+                body = re.sub(r"<v\s*>(.*?)</v\s*>", lambda x: "<v>%s</v>" % mask(x.group(1)),
+                              body, flags=re.DOTALL)
             # kind "s" points into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
         return "<c%s>%s</c>" % (attrs, body)
     return CELL.sub(fix_cell, xml)
-
 
 def scrub_shared_strings(xml, m):
     return re.sub(r"<si>.*?</si>", lambda x: "<si><t>%s</t></si>" % m.text(x.group(0)),
                   xml, flags=re.DOTALL)
 
-
-    """Redact author and metadata tags in a document properties XML part."""
 def scrub_properties(xml, m):
+    """Redact author and metadata tags in a document properties XML part."""
     for tag in PROPERTY_TAGS:
         xml, n = re.subn(r"(<%s\b[^>]*>).*?(</%s>)" % (tag, tag), r"\1redacted\2", xml, flags=re.DOTALL)
         m.count["properties"] += n
     return xml
-
 
 def scrub_comments(xml, m):
     xml = re.sub(r"<author>.*?</author>", "<author>redacted</author>", xml, flags=re.DOTALL)
@@ -120,20 +135,23 @@ def scrub_comments(xml, m):
     m.count["comments"] += n
     return xml
 
-
 def scrub_threaded_comments(xml, m):
     xml, n = re.subn(r"<text>.*?</text>", "<text>redacted</text>", xml, flags=re.DOTALL)
     m.count["comments"] += n
     return re.sub(r'\b(displayName|userId|providerId)="[^"]*"', r'\1="redacted"', xml)
 
-
-    """Strip cached chart data and redact titles and labels in a chart XML part."""
 def scrub_chart(xml, m):
-    xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.DOTALL)  # saved data copies
-    xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)  # titles, labels
+    """Strip cached chart data and redact titles and labels in a chart XML part."""
+    xml, n1 = re.subn(r"<c:(numCache|strCache|numLit|strLit)>.*?</c:\1>", "", xml, flags=re.DOTALL)
+    xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)
     m.count["charts"] += n1 + n2
     return xml
 
+def scrub_drawing(xml, m):
+    """Redact visible text in drawing parts (text boxes, shapes)."""
+    xml, n = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)
+    m.count["drawings"] += n
+    return xml
 
 def pick_handler(name):
     """Which scrubbing function (if any) applies to this part of the file."""
@@ -149,8 +167,9 @@ def pick_handler(name):
         return scrub_threaded_comments
     if re.fullmatch(r"xl/charts/chart\d*\.xml", name):
         return scrub_chart
+    if re.fullmatch(r"xl/drawings/drawing\d*\.xml", name):
+        return scrub_drawing
     return None  # copied byte-for-byte (this is how VBA stays intact)
-
 
 def scrub_file(src, dst):
     """Write a scrubbed copy of src to dst. Returns (counts, things_to_review)."""
@@ -159,26 +178,39 @@ def scrub_file(src, dst):
         if "xl/workbook.xml" not in zin.namelist():
             raise ScrubError("This does not look like a normal .xlsx/.xlsm workbook "
                              "(.xlsb is not supported).")
-        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                data = zin.read(item)
-                handler = pick_handler(item.filename)
-                if handler:
-                    data = handler(data.decode("utf-8"), m).encode("utf-8")
-                else:
-                    untouched.append(item.filename)
-                info = zipfile.ZipInfo(item.filename, item.date_time)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = item.external_attr
-                zout.writestr(info, data)
+        if os.path.islink(dst):  # never write through a symlink someone planted
+            raise ScrubError("the output path is a symlink: " + dst + ". Refusing to write through it.")
+        if os.path.exists(dst):  # overwrite only a plain regular file from an earlier run
+            if not os.path.isfile(dst):
+                raise ScrubError("the output path already exists and is not a regular file: " + dst)
+            os.remove(dst)
+        try:
+            out = open(dst, "xb")  # "x": fails if dst reappears between the checks above and here
+        except FileExistsError:
+            raise ScrubError("could not create the output file: " + dst + ". Try again or choose "
+                             "a new name with -o.")
+        try:  # from here on this run created dst, so it is ours to remove on failure
+            with out, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item)
+                    handler = pick_handler(item.filename)
+                    if handler:
+                        data = handler(data.decode("utf-8"), m).encode("utf-8")
+                    else:
+                        untouched.append(item.filename)
+                    info = zipfile.ZipInfo(item.filename, item.date_time)
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = item.external_attr
+                    zout.writestr(info, data)
+        except BaseException:
+            os.remove(dst)
+            raise
     review = [why for key, why in REVIEW.items() if any(key in n for n in untouched)]
     return m.count, review
-
 
 def fail(message):
     print("ERROR: " + message, file=sys.stderr)
     return 1
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -186,7 +218,6 @@ def main(argv=None):
     parser.add_argument("file", help="the Excel file to scrub")
     parser.add_argument("-o", "--output", help="where to save the result (default: NAME.scrubbed.ext)")
     args = parser.parse_args(argv)
-
     stem, ext = os.path.splitext(args.file)
     dst = args.output or stem + ".scrubbed" + ext
     if not os.path.isfile(args.file):
@@ -199,23 +230,19 @@ def main(argv=None):
     try:
         counts, review = scrub_file(args.file, dst)
     except (ScrubError, zipfile.BadZipFile, UnicodeDecodeError) as err:
-        if os.path.exists(dst):
-            os.remove(dst)
         return fail(str(err) or "the file could not be read.")
-
     print("Done. Saved: " + dst)
     print("  text values masked:        %d" % counts["strings"])
     print("  typed numbers masked:      %d" % counts["numbers"])
     print("  formula results removed:   %d" % counts["formula_results"])
-    print("  comments/properties/charts cleaned: %d" % (
-        counts["comments"] + counts["properties"] + counts["charts"]))
+    print("  comments/properties/charts/drawings cleaned: %d" % (
+        counts["comments"] + counts["properties"] + counts["charts"] + counts["drawings"]))
     print("Kept as-is on purpose: formulas, sheet names, layout, VBA code.")
     if review:
         print("PLEASE CHECK before sending (copied unchanged, may contain real data):")
         for why in review:
             print("  - " + why)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
