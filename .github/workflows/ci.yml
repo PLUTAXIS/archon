@@ -23,4 +23,4 @@ jobs:
       - name: Types
         run: uv run mypy --strict archon/contracts
       - name: Tests (contracts + explain, includes determinism tests)
-        run: uv run pytest tests/contracts tests/explain -q
+        run: uv run pytest -q
