@@ -132,6 +132,26 @@ class TestDefinedNameGap(unittest.TestCase):
         """MyRange isn't a cell address, so it's left as raw text."""
         self.assertEqual(to_r1c1_ast(parse("=MyRange"), (6, 4)), r("MyRange"))
 
+    def test_ambiguous_short_name_untouched(self):
+        """TAX is column-shaped but is a defined name here, not a range
+        endpoint, so it must not be rewritten as a column offset."""
+        self.assertEqual(to_r1c1_ast(parse("=TAX"), (6, 4)), r("TAX"))
+
+    def test_digit_containing_name_untouched(self):
+        """Q1_total doesn't match any address shape and stays untouched."""
+        self.assertEqual(
+            to_r1c1_ast(parse("=Q1_total"), (6, 4)), r("Q1_total")
+        )
+
+    def test_whole_column_range_still_translates(self):
+        """A real whole-column range (A:A) still translates both corners,
+        even though "A" alone is the same ambiguous shape as a defined
+        name -- the ':' range context is what disambiguates it."""
+        self.assertEqual(
+            to_r1c1_ast(parse("=A:A"), (6, 4)),
+            BinOp(op=":", left=r("C[-3]"), right=r("C[-3]")),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
