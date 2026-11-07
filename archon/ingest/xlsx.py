@@ -42,7 +42,7 @@ def extract(path: Path) -> RawExtract:
             name=ws.title,
             index=idx,
             visibility=sheet_state,
-            dimensions=getattr(ws, "dimensions", None) or "A1:A1",
+            dimensions=ws.calculate_dimension() if getattr(ws, "dimensions", None) else "A1:A1",
             merged_cells=[],
             frozen_panes=None,
         ))
