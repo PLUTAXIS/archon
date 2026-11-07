@@ -1,4 +1,4 @@
-"""Golden determinism check: canonical-hash every JSON fixture against a committed manifest.
+"""Golden determinism check: canonical-hash every JSON fixture under tests/ against a committed manifest.
 
 Fails on fixture drift (unordered serialization, dict ordering, etc.).
 Regenerate the baseline explicitly with: python tests/test_determinism_golden.py
@@ -7,9 +7,9 @@ import hashlib
 import json
 import pathlib
 
-HERE = pathlib.Path(__file__).parent
-FIXTURES = sorted((HERE.parent).rglob("*.json"))
-MANIFEST = HERE / "golden" / "hashes.txt"
+ROOT = pathlib.Path(__file__).parent.parent          # repo root
+FIXTURES = sorted((ROOT / "tests").rglob("*.json"))  # tests/ only — never .venv
+MANIFEST = ROOT / "tests" / "golden" / "hashes.txt"
 
 
 def canonical_hash(path: pathlib.Path) -> str:
@@ -25,9 +25,7 @@ def test_fixtures_match_golden_manifest():
         "tests/golden/hashes.txt missing. Regenerate the baseline explicitly with: "
         "python tests/test_determinism_golden.py"
     )
-    lines = [
-        f"{canonical_hash(p)}  {p.relative_to(HERE.parent).as_posix()}" for p in FIXTURES
-    ]
+    lines = [f"{canonical_hash(p)}  {p.relative_to(ROOT).as_posix()}" for p in FIXTURES]
     expected = MANIFEST.read_text(encoding="utf-8").splitlines()
     assert lines == expected, (
         "Determinism drift detected. Diff fixtures against tests/golden/hashes.txt; "
@@ -37,7 +35,7 @@ def test_fixtures_match_golden_manifest():
 
 if __name__ == "__main__":
     MANIFEST.write_text(
-        "\n".join(f"{canonical_hash(p)}  {p.relative_to(HERE.parent).as_posix()}" for p in FIXTURES) + "\n",
+        "\n".join(f"{canonical_hash(p)}  {p.relative_to(ROOT).as_posix()}" for p in FIXTURES) + "\n",
         encoding="utf-8",
     )
     print(f"Regenerated {MANIFEST} ({len(FIXTURES)} fixtures)")
