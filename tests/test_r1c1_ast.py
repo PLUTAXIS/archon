@@ -143,6 +143,11 @@ class TestDefinedNameGap(unittest.TestCase):
             to_r1c1_ast(parse("=Q1_total"), (6, 4)), r("Q1_total")
         )
 
+    def test_out_of_bounds_cell_shaped_name_untouched(self):
+        """XFE1 is cell-shaped but out of worksheet bounds, so it's a
+        defined name, not a real reference -- must stay untouched."""
+        self.assertEqual(to_r1c1_ast(parse("=XFE1"), (1, 1)), r("XFE1"))
+
     def test_whole_column_range_still_translates(self):
         """A real whole-column range (A:A) still translates both corners,
         even though "A" alone is the same ambiguous shape as a defined
