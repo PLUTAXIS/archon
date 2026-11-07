@@ -1,20 +1,60 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import Card from "../components/Card"
 import Button from "../components/Button"
 import Badge from "../components/Badge"
 import RiskGauge from "../components/RiskGauge"
 import CriticalFindings from "../components/CriticalFindings"
-import { sampleReport } from "../data/sampleReport"
+import { fetchReport } from "../api/reports"
 import { useAudit } from "../audit/AuditContext"
 import { downloadExcel } from "../utils/exportExcel"
 import "./ReportPreviewer.css"
 
 /**
- * Report page: Critical Findings first, then the risk score and details.
+ * Report page: loads the report, then shows Critical Findings first,
+ * followed by the risk score and details.
  */
 function ReportPreviewer() {
-  const { client, date, riskScore, findings, details } = sampleReport
   const { record } = useAudit()
+  const [report, setReport] = useState(null)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    let cancelled = false
+    fetchReport()
+      .then((data) => {
+        if (!cancelled) setReport(data)
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (error) {
+    return (
+      <main className="report">
+        <p>
+          <Link to="/">Back to dashboard</Link>
+        </p>
+        <Card title="Could not load the report">
+          <p role="alert">{error}</p>
+        </Card>
+      </main>
+    )
+  }
+
+  if (!report) {
+    return (
+      <main className="report">
+        <p>Loading report…</p>
+      </main>
+    )
+  }
+
+  const { client, date, riskScore, findings, details } = report
 
   function handlePdf() {
     record("Downloaded PDF")
