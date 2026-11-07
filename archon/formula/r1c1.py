@@ -292,7 +292,10 @@ def _parse_ref_corner(text: str) -> tuple[int | None, int | None, bool, bool]:
     m = _FULL_ADDR.fullmatch(text)
     if m:
         col_dollar, letters, row_dollar, digits = m.groups()
-        return int(digits), col_to_num(letters), bool(row_dollar), bool(col_dollar)
+        row, col = int(digits), col_to_num(letters)
+        if 1 <= row <= MAX_ROW and 1 <= col <= MAX_COL:
+            return row, col, bool(row_dollar), bool(col_dollar)
+        return None, None, False, False
     m = _COL_ONLY.fullmatch(text)
     if m:
         dollar, letters = m.groups()
