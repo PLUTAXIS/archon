@@ -129,12 +129,12 @@ class _Parser:
         return left
 
     def _exponent(self) -> Node:
-        """'^' is right-associative, e.g. 2^3^2 == 2^(3^2)."""
+        """'^' is left-associative, e.g. 2^3^2 == (2^3)^2."""
         left = self._percent()
-        if self._peek().type == TokenType.OP and self._peek().text == "^":
+        while self._peek().type == TokenType.OP and self._peek().text == "^":
             self._advance()
-            right = self._exponent()
-            return BinOp(op="^", left=left, right=right)
+            right = self._percent()
+            left = BinOp(op="^", left=left, right=right)
         return left
 
     def _percent(self) -> Node:

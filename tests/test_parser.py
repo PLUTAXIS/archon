@@ -200,10 +200,21 @@ class TestPrecedence(unittest.TestCase):
             ),
         )
 
-    def test_power_right_associative(self):
-        """2^3^2 is 2^(3^2)."""
+    def test_power_left_associative(self):
+        """2^3^2 is (2^3)^2, matching real Excel evaluation order."""
         self.assertEqual(
             parse("=2^3^2"),
+            BinOp(
+                op="^",
+                left=BinOp(op="^", left=Lit(value=2.0), right=Lit(value=3.0)),
+                right=Lit(value=2.0),
+            ),
+        )
+
+    def test_power_explicit_right_nesting(self):
+        """Explicit parens still force 2^(3^2)."""
+        self.assertEqual(
+            parse("=2^(3^2)"),
             BinOp(
                 op="^",
                 left=Lit(value=2.0),
