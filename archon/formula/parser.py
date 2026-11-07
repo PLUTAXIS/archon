@@ -16,7 +16,7 @@ Excel's full precedence table (tightest to loosest) is:
     : (range)  (space) (intersection)  , (union)   <- reference operators
     – (unary minus/plus)
     % (postfix percent)
-    ^ (exponentiation, right-associative)
+    ^ (exponentiation, left-associative in Excel: 2^3^2 == (2^3)^2)
     * /
     + -
     & (concatenation)
