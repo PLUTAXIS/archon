@@ -1,20 +1,30 @@
-import Button from "./components/Button"
-import Card from "./components/Card"
-import Badge from "./components/Badge"
+import { Routes, Route } from "react-router-dom"
+import ProtectedRoute from "./components/ProtectedRoute"
+import Login from "./pages/Login"
+import Dashboard from "./pages/Dashboard"
+import ReportPreviewer from "./pages/ReportPreviewer"
 
 function App() {
   return (
-    <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
-      <Card title="Critical Findings">
-        <p>
-          <Badge level="high">High risk</Badge>{" "}
-          <Badge level="medium">Medium</Badge>{" "}
-          <Badge level="low">Low</Badge>
-        </p>
-        <Button>Download PDF</Button>{" "}
-        <Button variant="secondary">View details</Button>
-      </Card>
-    </main>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/report"
+        element={
+          <ProtectedRoute>
+            <ReportPreviewer />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   )
 }
 

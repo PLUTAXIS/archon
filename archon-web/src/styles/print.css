@@ -1,0 +1,52 @@
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .report {
+    max-width: none;
+    padding: 0;
+  }
+
+  .report-summary {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  .report-summary .card,
+  .finding,
+  tr {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  .card {
+    box-shadow: none;
+  }
+
+  .report-table-wrap {
+    overflow: visible;
+  }
+}
