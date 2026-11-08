@@ -115,6 +115,101 @@ def _sheet_metadata(path: Path) -> dict[str, dict]:
     return metadata
 
 
+def _defined_names(path: Path) -> list:
+    """Read defined names (named ranges) from xl/workbook.xml in the zip."""
+    from archon.contracts.extract import DefinedName
+    names = []
+    ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            with z.open("xl/workbook.xml") as f:
+                tree = ET.parse(f)
+                for dn in tree.findall(".//ms:definedName", ns):
+                    name = dn.get("name", "")
+                    scope = dn.get("localSheetId", "workbook")
+                    refers_to = dn.text or ""
+                    if name:
+                        names.append(DefinedName(
+                            name=name,
+                            scope=str(scope),
+                            refers_to=refers_to,
+                        ))
+    except Exception:
+        pass
+    return names
+
+
+def _tables(path: Path) -> list:
+    """Read table definitions from xl/tables/ in the zip."""
+    from archon.contracts.extract import Table
+    tables = []
+    ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            # Find which sheet each table belongs to via relationships
+            sheet_files = sorted([
+                n for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ])
+
+            # Read workbook sheet names in order
+            with z.open("xl/workbook.xml") as f:
+                tree = ET.parse(f)
+                wb_ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                sheet_names = [
+                    s.get("name", "")
+                    for s in tree.findall(".//ms:sheet", wb_ns)
+                ]
+
+            sheet_map = dict(zip(sheet_files, sheet_names))
+
+            # Find table files
+            table_files = [
+                n for n in z.namelist()
+                if n.startswith("xl/tables/") and n.endswith(".xml")
+            ]
+
+            for table_file in sorted(table_files):
+                try:
+                    with z.open(table_file) as f:
+                        tree = ET.parse(f)
+                        root = tree.getroot()
+                        name = root.get("name", "")
+                        ref = root.get("ref", "")
+
+                        # Find which sheet this table belongs to
+                        sheet_name = ""
+                        for sf, sn in sheet_map.items():
+                            rel_file = sf.replace(
+                                "xl/worksheets/sheet",
+                                "xl/worksheets/_rels/sheet"
+                            ).replace(".xml", ".xml.rels")
+                            try:
+                                with z.open(rel_file) as rf:
+                                    rel_tree = ET.parse(rf)
+                                    for rel in rel_tree.findall(".//{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"):
+                                        target = rel.get("Target", "")
+                                        if table_file.split("/")[-1] in target:
+                                            sheet_name = sn
+                            except Exception:
+                                pass
+
+                        if name and ref:
+                            tables.append(Table(
+                                name=name,
+                                sheet=sheet_name,
+                                ref=ref,
+                                is_hidden=False,
+                            ))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return tables
+
+
 def extract(path: Path) -> RawExtract:
     """Extract a RawExtract from an xlsx/xlsm file at path."""
     path = Path(path)
@@ -226,10 +321,12 @@ def extract(path: Path) -> RawExtract:
     cells.sort(key=lambda c: (c.sheet, c.row, c.col))
 
     return RawExtract(
-        schema_version="1.0",
-        workbook_id=uuid.uuid4(),
-        source=source,
-        sheets=sheets,
-        cells=cells,
-        exceptions=[],
-    )
+    schema_version="1.0",
+    workbook_id=uuid.uuid4(),
+    source=source,
+    sheets=sheets,
+    cells=cells,
+    defined_names=_defined_names(path),
+    tables=_tables(path),
+    exceptions=[],
+)
