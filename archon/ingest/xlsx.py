@@ -60,6 +60,61 @@ def _sheet_visibility(path: Path) -> dict[str, str]:
     return states
 
 
+def _sheet_metadata(path: Path) -> dict[str, dict]:
+    """Read merged cells and frozen panes for each sheet from the zip.
+    
+    Returns a dict of {sheet_name: {merged_cells: [...], frozen_panes: str|None}}
+    """
+    metadata: dict[str, dict] = {}
+    ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            # Find sheet file names from workbook relationships
+            with z.open("xl/workbook.xml") as f:
+                tree = ET.parse(f)
+                sheets = tree.findall(".//ms:sheet", ns)
+                sheet_names = [s.get("name", "") for s in sheets]
+
+            # Read each sheet XML
+            sheet_files = sorted([
+                n for n in z.namelist()
+                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+            ])
+
+            for sheet_name, sheet_file in zip(sheet_names, sheet_files):
+                merged = []
+                frozen = None
+                try:
+                    with z.open(sheet_file) as f:
+                        tree = ET.parse(f)
+
+                        # Merged cells
+                        for mc in tree.findall(".//ms:mergeCell", ns):
+                            ref = mc.get("ref")
+                            if ref:
+                                merged.append(ref)
+
+                        # Frozen panes
+                        pane = tree.find(".//ms:pane", ns)
+                        if pane is not None:
+                            state = pane.get("state", "")
+                            if state == "frozen":
+                                frozen = pane.get("topLeftCell")
+
+                except Exception:
+                    pass
+
+                metadata[sheet_name] = {
+                    "merged_cells": merged,
+                    "frozen_panes": frozen,
+                }
+    except Exception:
+        pass
+
+    return metadata
+
+
 def extract(path: Path) -> RawExtract:
     """Extract a RawExtract from an xlsx/xlsm file at path."""
     path = Path(path)
@@ -87,18 +142,19 @@ def extract(path: Path) -> RawExtract:
 
     try:
         visibility_map = _sheet_visibility(path)
+        sheet_meta = _sheet_metadata(path)
 
         for idx, ws in enumerate(wb_formulas.worksheets):
             sheet_state = visibility_map.get(ws.title, "visible")
+            meta = sheet_meta.get(ws.title, {})
             sheets.append(Sheet(
                 name=ws.title,
                 index=idx,
                 visibility=sheet_state,
                 dimensions=ws.calculate_dimension() if getattr(ws, "dimensions", None) else "A1:A1",
-                merged_cells=[],
-                frozen_panes=None,
+                merged_cells=meta.get("merged_cells", []),
+                frozen_panes=meta.get("frozen_panes", None),
             ))
-
         # Build a lookup of cached values from second pass
         # { (sheet_name, coordinate): value }
         cached_lookup: dict[tuple[str, str], object] = {}
