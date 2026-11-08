@@ -156,7 +156,7 @@ def extract(path: Path) -> RawExtract:
                         formula=formula,
                         cached_value=cached_value,
                         data_type=data_type,
-                        number_format=getattr(cell, "number_format", None),
+                        number_format=getattr(cell, "number_format", None) or None,
                         is_array_formula=is_array,
                         shared_group_id=None,
                     ))
