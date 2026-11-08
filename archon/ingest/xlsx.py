@@ -66,6 +66,8 @@ def extract(path: Path) -> RawExtract:
                     cv = cell.value
                     if hasattr(cv, "isoformat"):
                         cached_value = cv.isoformat()
+                    elif hasattr(cv, "total_seconds"):
+                        cached_value = cv.total_seconds()
                     else:
                         cached_value = cv
 
