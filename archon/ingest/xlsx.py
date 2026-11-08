@@ -13,6 +13,7 @@ from archon.contracts.extract import (
 
 
 def _sha256(path: Path) -> str:
+    """Return the hex SHA-256 digest of the file at path."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
@@ -21,6 +22,7 @@ def _sha256(path: Path) -> str:
 
 
 def extract(path: Path) -> RawExtract:
+    """Extract a RawExtract from an xlsx/xlsm file at path."""
     path = Path(path)
     suffix = path.suffix.lower().lstrip(".")
 
@@ -55,13 +57,17 @@ def extract(path: Path) -> RawExtract:
                 cached_value = None
                 is_array = False
 
-                if isinstance(cell.value, str) and cell.value.startswith("="):
+                if isinstance(cell.value, str) and cell.value.startswith("=") and cell.data_type == "f":
                     formula = cell.value
                 elif hasattr(cell.value, "text"):
                     formula = "=" + str(cell.value.text)
                     is_array = True
                 else:
-                    cached_value = cell.value
+                    cv = cell.value
+                    if hasattr(cv, "isoformat"):
+                        cached_value = cv.isoformat()
+                    else:
+                        cached_value = cv
 
                 cells.append(Cell(
                     sheet=ws.title,
@@ -70,9 +76,10 @@ def extract(path: Path) -> RawExtract:
                     col=cell.column,
                     formula=formula,
                     cached_value=cached_value,
-                    data_type="s" if isinstance(cached_value, str) else
-                               "b" if isinstance(cached_value, bool) else
-                               "n" if isinstance(cached_value, (int, float)) else "s",
+                    data_type="e" if cell.data_type == "e" else
+                              "s" if isinstance(cached_value, str) else
+                              "b" if isinstance(cached_value, bool) else
+                              "n" if isinstance(cached_value, (int, float)) else "s",
                     number_format=None,
                     is_array_formula=is_array,
                     shared_group_id=None,
