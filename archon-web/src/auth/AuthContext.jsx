@@ -48,9 +48,10 @@ export function AuthProvider({ children }) {
   )
 }
 
-/**
+ /**
  * Gives any component access to the logged-in user and login/logout.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext)
 }

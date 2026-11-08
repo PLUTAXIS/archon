@@ -4,6 +4,7 @@ import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
 import ReportPreviewer from "./pages/ReportPreviewer"
 import AuditTrail from "./pages/AuditTrail"
+import GraphView from "./pages/GraphView"
 
 function App() {
   return (
@@ -30,6 +31,14 @@ function App() {
         element={
           <ProtectedRoute>
             <AuditTrail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/graph"
+        element={
+          <ProtectedRoute>
+            <GraphView />
           </ProtectedRoute>
         }
       />

@@ -46,6 +46,7 @@ export function AuditProvider({ children }) {
 /**
  * Gives any component the audit entries and a record() function.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAudit() {
   return useContext(AuditContext)
 }
