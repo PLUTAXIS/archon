@@ -1,3 +1,4 @@
+from archon.ingest.vba import extract_vba
 import hashlib
 import uuid
 from pathlib import Path
@@ -319,6 +320,23 @@ def extract(path: Path) -> RawExtract:
     # Sort deterministically
     sheets.sort(key=lambda s: s.index)
     cells.sort(key=lambda c: (c.sheet, c.row, c.col))
+    # Extract VBA if present
+    vba_modules: list = []
+    vba_exceptions: list = []
+    suffix_lower = path.suffix.lower()
+    if suffix_lower in (".xlsm", ".xlsb"):
+        try:
+            vba_modules, vba_exceptions = extract_vba(path)
+        except Exception as e:
+            vba_exceptions.append(
+                __import__("archon.contracts.extract", fromlist=["ExtractException"])
+                .ExtractException(
+                    code="E_OLE_PARSE_FAILED",
+                    severity="error",
+                    sheet=None,
+                    detail=str(e),
+            )
+        )
 
     return RawExtract(
     schema_version="1.0",
@@ -328,5 +346,6 @@ def extract(path: Path) -> RawExtract:
     cells=cells,
     defined_names=_defined_names(path),
     tables=_tables(path),
-    exceptions=[],
+    vba_modules=vba_modules,
+    exceptions=vba_exceptions,
 )
