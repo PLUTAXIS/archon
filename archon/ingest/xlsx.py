@@ -1,7 +1,8 @@
 import hashlib
 import uuid
 from pathlib import Path
-
+import zipfile
+import xml.etree.ElementTree as ET
 import openpyxl
 
 from archon.contracts.extract import (
@@ -38,6 +39,27 @@ def _to_cached(value) -> float | str | bool | None:
     return str(value)
 
 
+def _sheet_visibility(path: Path) -> dict[str, str]:
+    """Read sheet visibility states directly from xl/workbook.xml in the zip.
+    
+    Returns a dict of {sheet_name: visibility_state} where state is one of
+    visible, hidden, veryHidden.
+    """
+    states: dict[str, str] = {}
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            with z.open("xl/workbook.xml") as f:
+                tree = ET.parse(f)
+                ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                for sheet in tree.findall(".//ms:sheet", ns):
+                    name = sheet.get("name", "")
+                    state = sheet.get("state", "visible")
+                    states[name] = state
+    except Exception:
+        pass
+    return states
+
+
 def extract(path: Path) -> RawExtract:
     """Extract a RawExtract from an xlsx/xlsm file at path."""
     path = Path(path)
@@ -64,8 +86,10 @@ def extract(path: Path) -> RawExtract:
     cells = []
 
     try:
+        visibility_map = _sheet_visibility(path)
+
         for idx, ws in enumerate(wb_formulas.worksheets):
-            sheet_state = getattr(ws, "sheet_state", "visible")
+            sheet_state = visibility_map.get(ws.title, "visible")
             sheets.append(Sheet(
                 name=ws.title,
                 index=idx,
