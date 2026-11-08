@@ -21,6 +21,23 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _to_cached(value) -> float | str | bool | None:
+    """Convert a cell value to a type accepted by Cell.cached_value."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return value
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if hasattr(value, "total_seconds"):
+        return value.total_seconds() / 86400
+    return str(value)
+
+
 def extract(path: Path) -> RawExtract:
     """Extract a RawExtract from an xlsx/xlsm file at path."""
     path = Path(path)
@@ -33,61 +50,100 @@ def extract(path: Path) -> RawExtract:
         bytes=path.stat().st_size,
     )
 
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=False)
+    # First pass — formulas (data_only=False)
+    wb_formulas = openpyxl.load_workbook(
+        path, read_only=True, data_only=False
+    )
+
+    # Second pass — cached values (data_only=True)
+    wb_cached = openpyxl.load_workbook(
+        path, read_only=True, data_only=True
+    )
 
     sheets = []
     cells = []
 
-    for idx, ws in enumerate(wb.worksheets):
-        sheet_state = getattr(ws, "sheet_state", "visible")
-        sheets.append(Sheet(
-            name=ws.title,
-            index=idx,
-            visibility=sheet_state,
-            dimensions=ws.calculate_dimension() if getattr(ws, "dimensions", None) else "A1:A1",
-            merged_cells=[],
-            frozen_panes=None,
-        ))
+    try:
+        for idx, ws in enumerate(wb_formulas.worksheets):
+            sheet_state = getattr(ws, "sheet_state", "visible")
+            sheets.append(Sheet(
+                name=ws.title,
+                index=idx,
+                visibility=sheet_state,
+                dimensions=ws.calculate_dimension() if getattr(ws, "dimensions", None) else "A1:A1",
+                merged_cells=[],
+                frozen_panes=None,
+            ))
 
-        for row in ws.iter_rows():
-            for cell in row:
-                if cell.value is None:
-                    continue
-                formula = None
-                cached_value = None
-                is_array = False
+        # Build a lookup of cached values from second pass
+        # { (sheet_name, coordinate): value }
+        cached_lookup: dict[tuple[str, str], object] = {}
+        for ws_c in wb_cached.worksheets:
+            for row in ws_c.iter_rows():
+                for cell in row:
+                    if cell.value is not None:
+                        cached_lookup[(ws_c.title, cell.coordinate)] = cell.value
 
-                if isinstance(cell.value, str) and cell.value.startswith("=") and cell.data_type == "f":
-                    formula = cell.value
-                elif hasattr(cell.value, "text"):
-                    formula = "=" + str(cell.value.text)
-                    is_array = True
-                else:
-                    cv = cell.value
-                    if hasattr(cv, "isoformat"):
-                        cached_value = cv.isoformat()
-                    elif hasattr(cv, "total_seconds"):
-                        cached_value = cv.total_seconds()
+        # Now build cells using formula pass + cached lookup
+        for ws in wb_formulas.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.value is None:
+                        continue
+
+                    formula = None
+                    cached_value = None
+                    is_array = False
+
+                    if cell.data_type == "f":
+                        if hasattr(cell.value, "text"):
+                            # Array formula
+                            formula = "=" + str(cell.value.text)
+                            is_array = True
+                        elif isinstance(cell.value, str) and cell.value.startswith("="):
+                            formula = cell.value
+                        else:
+                            formula = str(cell.value)
+                        # Get cached value from second pass
+                        raw = cached_lookup.get((ws.title, cell.coordinate))
+                        cached_value = _to_cached(raw)
                     else:
-                        cached_value = cv
+                        cached_value = _to_cached(cell.value)
 
-                cells.append(Cell(
-                    sheet=ws.title,
-                    address=cell.coordinate,
-                    row=cell.row,
-                    col=cell.column,
-                    formula=formula,
-                    cached_value=cached_value,
-                    data_type="e" if cell.data_type == "e" else
-                              "s" if isinstance(cached_value, str) else
-                              "b" if isinstance(cached_value, bool) else
-                              "n" if isinstance(cached_value, (int, float)) else "s",
-                    number_format=None,
-                    is_array_formula=is_array,
-                    shared_group_id=None,
-                ))
+                    # Determine data type
+                    if cell.data_type == "e":
+                        data_type = "e"
+                    elif cell.data_type == "f":
+                        data_type = "n"
+                    elif isinstance(cached_value, bool):
+                        data_type = "b"
+                    elif isinstance(cached_value, str):
+                        data_type = "s"
+                    elif isinstance(cached_value, (int, float)):
+                        data_type = "n"
+                    else:
+                        data_type = "s"
 
-    wb.close()
+                    cells.append(Cell(
+                        sheet=ws.title,
+                        address=cell.coordinate,
+                        row=cell.row,
+                        col=cell.column,
+                        formula=formula,
+                        cached_value=cached_value,
+                        data_type=data_type,
+                        number_format=getattr(cell, "number_format", None),
+                        is_array_formula=is_array,
+                        shared_group_id=None,
+                    ))
+
+    finally:
+        wb_formulas.close()
+        wb_cached.close()
+
+    # Sort deterministically
+    sheets.sort(key=lambda s: s.index)
+    cells.sort(key=lambda c: (c.sheet, c.row, c.col))
 
     return RawExtract(
         schema_version="1.0",
