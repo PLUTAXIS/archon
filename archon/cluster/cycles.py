@@ -40,6 +40,7 @@ archon.formula.parser.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -50,6 +51,9 @@ DependencyGraph = Mapping[CellId, Sequence[CellId]]
 Classification = Literal["logic", "error"]
 
 _ITERATIVE_FUNCS = frozenset({"IRR", "XIRR", "RATE", "NPER", "PMT"})
+_ITERATIVE_RE = re.compile(
+    r"(?<![A-Z0-9_.])(" + "|".join(sorted(_ITERATIVE_FUNCS)) + r")\("
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,9 +97,17 @@ def find_cycles(graph: DependencyGraph) -> list[Cycle]:
     stack: list[CellId] = []
     sccs: list[frozenset[CellId]] = []
 
-    all_nodes: set[CellId] = set(graph.keys())
+    all_nodes: list[CellId] = []
+    seen_nodes: set[CellId] = set()
+    for node in graph.keys():
+        if node not in seen_nodes:
+            seen_nodes.add(node)
+            all_nodes.append(node)
     for dependents in graph.values():
-        all_nodes.update(dependents)
+        for dep in dependents:
+            if dep not in seen_nodes:
+                seen_nodes.add(dep)
+                all_nodes.append(dep)
 
     for start in all_nodes:
         if start in index:
@@ -164,12 +176,10 @@ def suggest_classification(
     or copy-paste mistakes, but this is the weaker, default guess and
     should get the most scrutiny, not the least.
     """
-    found = set()
+    found: set[str] = set()
     for cell in cycle.members:
         text = formulas.get(cell, "").upper()
-        for fn in _ITERATIVE_FUNCS:
-            if fn + "(" in text:
-                found.add(fn)
+        found.update(_ITERATIVE_RE.findall(text))
     if found:
         names = ", ".join(sorted(found))
         return "logic", f"Found iterative-calculation function(s) {names} in cycle"

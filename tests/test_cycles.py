@@ -104,6 +104,23 @@ class TestSuggestClassification(unittest.TestCase):
         label, _ = suggest_classification(cycle, {})
         self.assertEqual(label, "error")
 
+    def test_xirr_does_not_also_match_irr(self):
+        """XIRR(...) should report only XIRR, not also IRR as a substring."""
+        cycle = Cycle(members=frozenset({("S", "A")}))
+        formulas = {("S", "A"): "=XIRR(B1:B10,C1:C10)"}
+        label, reason = suggest_classification(cycle, formulas)
+        self.assertEqual(label, "logic")
+        self.assertIn("XIRR", reason)
+        self.assertNotIn("IRR,", reason)
+        self.assertNotRegex(reason, r"(?<![A-Z])IRR(?!R)")
+
+    def test_intrate_does_not_match_rate_suggests_error(self):
+        """INTRATE(...) should not be mistaken for RATE(...)."""
+        cycle = Cycle(members=frozenset({("S", "A")}))
+        formulas = {("S", "A"): "=INTRATE(A1,B1,C1,D1)"}
+        label, _ = suggest_classification(cycle, formulas)
+        self.assertEqual(label, "error")
+
 
 class TestClassifyCycle(unittest.TestCase):
     """Recording the human's actual classification decision."""
