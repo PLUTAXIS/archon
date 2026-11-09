@@ -34,6 +34,41 @@ class TestClusterIdFor(unittest.TestCase):
         with self.assertRaises(ParseError):
             cluster_id_for("=)", "A1")
 
+    def test_numeric_vs_string_literal_different_id(self):
+        """A numeric literal and a string literal that print the same way
+        must still hash differently -- the literal's type is part of the
+        canonical form, not just its value."""
+        self.assertNotEqual(
+            cluster_id_for('="1"', "A1"),
+            cluster_id_for("=1", "A1"),
+        )
+
+    def test_different_sheet_different_id(self):
+        """Two refs with the same cell text but different sheets must
+        hash differently."""
+        self.assertNotEqual(
+            cluster_id_for("=Sheet1\x21A1", "B1"),
+            cluster_id_for("=Sheet2\x21A1", "B1"),
+        )
+
+    def test_absolute_vs_relative_ref_different_id(self):
+        """$A$1 and A1 translate to different R1C1 text (absolute vs.
+        relative), so they must hash differently."""
+        self.assertNotEqual(
+            cluster_id_for("=$A$1", "B1"),
+            cluster_id_for("=A1", "B1"),
+        )
+
+    def test_function_name_case_currently_distinct(self):
+        """Documents current behavior: function-name case is NOT folded,
+        so sum(A1) and SUM(A1) get different ids. If the parser or this
+        module ever adds case-insensitive function names, this test
+        should be updated to assertEqual instead."""
+        self.assertNotEqual(
+            cluster_id_for("=sum(A1)", "B1"),
+            cluster_id_for("=SUM(A1)", "B1"),
+        )
+
 
 class TestClusterCellsAst(unittest.TestCase):
     """cluster_cells_ast: group rows by (sheet, column, AST hash)."""
