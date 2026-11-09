@@ -35,7 +35,10 @@ class TestFindOverrideBugs(unittest.TestCase):
         bugs = find_override_bugs(rows, clusters, constants)
         bug = bugs[0]
         self.assertIn(bug.example_formula_cell, ("D4", "D6"))
-        self.assertTrue(bug.example_formula.startswith("="))
+        self.assertEqual(
+            bug.example_formula,
+            {"D4": "=B4*C4", "D6": "=B6*C6"}[bug.example_formula_cell],
+        )
 
     def test_constant_outside_cluster_span_not_flagged(self):
         """A header or totals row above/below the cluster isn't a bug."""
@@ -96,6 +99,17 @@ class TestDownstreamTracing(unittest.TestCase):
             ("Sheet1", "D5"): [("Sheet1", "E5")],
             ("Sheet1", "E5"): [("Sheet1", "D5")],
         }
+        bugs = find_override_bugs(rows, clusters, constants, graph=graph)
+        self.assertEqual(bugs[0].downstream, (("Sheet1", "E5"),))
+
+    def test_absolute_address_constant_still_matches_graph(self):
+        """A constant whose own address has $ markers still finds its
+        dependents in a graph that uses plain addresses."""
+        rows = [("Sheet1", f"D{r}", f"=B{r}*C{r}") for r in range(2, 5)]
+        rows.append(("Sheet1", "$D$5", "145000"))
+        rows += [("Sheet1", f"D{r}", f"=B{r}*C{r}") for r in range(6, 9)]
+        clusters, constants, _ = cluster_cells_ast(rows)
+        graph = {("Sheet1", "D5"): [("Sheet1", "E5")]}
         bugs = find_override_bugs(rows, clusters, constants, graph=graph)
         self.assertEqual(bugs[0].downstream, (("Sheet1", "E5"),))
 
