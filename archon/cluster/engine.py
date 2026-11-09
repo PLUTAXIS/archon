@@ -94,12 +94,13 @@ def contiguous_runs(rows_sorted: list[int]) -> list[tuple[int, int]]:
 # architecture (see Project Archon brief §3): cluster by blake3 hash of the
 # formula's *canonical AST* -- the parsed, R1C1-translated tree -- rather
 # than its text. This means two formulas that are structurally identical
-# but spelled differently (e.g. differing only in incidental whitespace, or
-# in a function-name case difference the tokenizer already normalizes) are
-# guaranteed to land in the same cluster, which string equality already
-# handled correctly in practice but did so incidentally rather than by
-# construction. The real payoff is robustness: this is the path any future
-# formula-text normalization (e.g. case-insensitive function names) rides
+# but spelled differently (e.g. differing only in incidental whitespace
+# the tokenizer already discards) are guaranteed to land in the same
+# cluster. Note this does NOT currently cover function-name case (SUM vs
+# sum): the parser preserves a function's original case in Func.name, so
+# sum(A1) and SUM(A1) hash differently today. The real payoff is
+# robustness: this is the path any future formula-text normalization (e.g.
+# adding case-insensitive function names in the parser or here) rides
 # on for free, since it hashes structure, not text.
 #
 # This also finally confirms the cluster-id format Mainak's PROGRESS.md
