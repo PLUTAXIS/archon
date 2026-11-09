@@ -108,6 +108,24 @@ class TestDownstreamTracing(unittest.TestCase):
         self.assertTrue(bug.downstream_traced)
         self.assertEqual(bug.downstream, ())
 
+    def test_duplicate_dependent_edges_deduplicated(self):
+        """A formula like =E5+E5 could list E5 twice as a dependent; the
+        downstream list must not contain E5 twice."""
+        rows = rows_with_override()
+        clusters, constants, _ = cluster_cells_ast(rows)
+        graph = {("Sheet1", "D5"): [("Sheet1", "E5"), ("Sheet1", "E5")]}
+        bugs = find_override_bugs(rows, clusters, constants, graph=graph)
+        self.assertEqual(bugs[0].downstream, (("Sheet1", "E5"),))
+
+    def test_self_edge_excludes_start_from_downstream(self):
+        """If start appears in its own dependent list, it must not appear
+        in its own downstream result."""
+        rows = rows_with_override()
+        clusters, constants, _ = cluster_cells_ast(rows)
+        graph = {("Sheet1", "D5"): [("Sheet1", "D5"), ("Sheet1", "E5")]}
+        bugs = find_override_bugs(rows, clusters, constants, graph=graph)
+        self.assertEqual(bugs[0].downstream, (("Sheet1", "E5"),))
+
 
 if __name__ == "__main__":
     unittest.main()

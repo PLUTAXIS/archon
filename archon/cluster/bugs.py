@@ -71,8 +71,11 @@ def _trace_downstream(graph: DependencyGraph, start: CellId) -> tuple[CellId, ..
     """
     seen = {start}
     order: list[CellId] = []
-    queue: deque[CellId] = deque(graph.get(start, ()))
-    seen.update(queue)
+    queue: deque[CellId] = deque()
+    for nxt in graph.get(start, ()):
+        if nxt not in seen:
+            seen.add(nxt)
+            queue.append(nxt)
     while queue:
         node = queue.popleft()
         order.append(node)
