@@ -86,6 +86,16 @@ def _trace_downstream(graph: DependencyGraph, start: CellId) -> tuple[CellId, ..
     return tuple(order)
 
 
+def _canonical_addr(addr: str) -> str:
+    """Normalize an A1 address to its plain, dollar-free form (e.g. "$D$5"
+    and "D5" both become "D5"), so a constant's own address and a
+    dependency graph built with differently-styled addresses still
+    identify the same cell when tracing downstream impact.
+    """
+    row, col = parse_address(addr)
+    return f"{num_to_col(col)}{row}"
+
+
 def find_override_bugs(
     rows: Iterable[Row],
     clusters: Clusters,
@@ -133,7 +143,7 @@ def find_override_bugs(
         example_formula = formula_lookup.get((sheet, nearest_addr), "")
 
         if graph is not None:
-            downstream = _trace_downstream(graph, (sheet, addr))
+            downstream = _trace_downstream(graph, (sheet, _canonical_addr(addr)))
             traced = True
         else:
             downstream = ()
