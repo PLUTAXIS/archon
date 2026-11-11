@@ -49,4 +49,7 @@
   .report-table-wrap {
     overflow: visible;
   }
+    .report-section .card {
+    break-inside: avoid;
+  }
 }
