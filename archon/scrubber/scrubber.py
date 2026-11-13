@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
 
 WHAT IT CHANGES
@@ -13,6 +13,7 @@ SAFETY: standard library only. Reads one file, writes one NEW file, never
 changes your original, and never opens a network connection.
 
 USAGE:  python scrubber.py MyFile.xlsm      (creates MyFile.scrubbed.xlsm)
+OPTION: --keep-headers  leave row-1 text (column names) readable; everything else is masked.
 """
 import argparse
 import os
@@ -49,6 +50,7 @@ class Masker:
     def __init__(self):
         self.rng = random.Random(secrets.token_bytes(16))  # new random seed every run
         self.texts, self.numbers = {}, {}
+        self.keep_headers, self.keep = False, set()  # keep = shared strings used in row 1
         self.count = dict.fromkeys(
             ("strings", "numbers", "formula_results", "comments", "properties", "charts"), 0)
 
@@ -78,6 +80,22 @@ class Masker:
         return self.numbers[original]
 
 
+def row_of(attrs):
+    found = re.search(r'\br="[A-Z]+(\d+)"', attrs)
+    return int(found.group(1)) if found else 10 ** 9  # unknown row counts as data
+
+def header_strings(zin):
+    """Numbers of the shared strings used in row 1 of any sheet (they stay readable)."""
+    keep = set()
+    for name in zin.namelist():
+        if pick_handler(name) is scrub_sheet:
+            for cell in CELL.finditer(zin.read(name).decode("utf-8")):
+                attrs, body = cell.group(1), cell.group(2) or ""
+                value = re.search(r"<v>(\d+)</v>", body)
+                if value and row_of(attrs) == 1 and re.search(r'\bt="s"', attrs):
+                    keep.add(int(value.group(1)))
+    return keep
+
 def scrub_sheet(xml, m):
     """Redact cell values in a worksheet XML part, keeping formulas and structure."""
     def fix_cell(match):
@@ -94,25 +112,34 @@ def scrub_sheet(xml, m):
                 body = re.sub(r"<v>(.*?)</v>", lambda x: "<v>%s</v>" % m.number(x.group(1)),
                               body, flags=re.DOTALL)
             elif kind == "inlineStr":  # text stored inside the cell
-                body = re.sub(r"<is>.*?</is>",
-                              lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.DOTALL)
-            # kind "s" points into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
+                if not (m.keep_headers and row_of(attrs) == 1):
+                    body = re.sub(r"<is>.*?</is>",
+                                  lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.DOTALL)
+            elif kind == "s" and m.keep:  # a header word reused further down: mask it here
+                value = re.search(r"<v>(\d+)</v>", body)
+                if value and int(value.group(1)) in m.keep and row_of(attrs) != 1:
+                    attrs = attrs.replace('t="s"', 't="inlineStr"')
+                    body = "<is><t>%s</t></is>" % m.text(("shared", int(value.group(1))))
+            # other "s" cells point into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
         return "<c%s>%s</c>" % (attrs, body)
     return CELL.sub(fix_cell, xml)
 
-
 def scrub_shared_strings(xml, m):
-    return re.sub(r"<si>.*?</si>", lambda x: "<si><t>%s</t></si>" % m.text(x.group(0)),
-                  xml, flags=re.DOTALL)
+    idx = [0]  # position of each string in the table
 
+    def fix(x):
+        i, idx[0] = idx[0], idx[0] + 1
+        if i in m.keep or x.group(0) == "<si/>":
+            return x.group(0)  # a header word we were asked to keep, or an empty string
+        return "<si><t>%s</t></si>" % m.text(x.group(0))
+    return re.sub(r"<si>.*?</si>|<si/>", fix, xml, flags=re.DOTALL)
 
-    """Redact author and metadata tags in a document properties XML part."""
 def scrub_properties(xml, m):
+    """Redact author and metadata tags in a document properties XML part."""
     for tag in PROPERTY_TAGS:
         xml, n = re.subn(r"(<%s\b[^>]*>).*?(</%s>)" % (tag, tag), r"\1redacted\2", xml, flags=re.DOTALL)
         m.count["properties"] += n
     return xml
-
 
 def scrub_comments(xml, m):
     xml = re.sub(r"<author>.*?</author>", "<author>redacted</author>", xml, flags=re.DOTALL)
@@ -120,20 +147,17 @@ def scrub_comments(xml, m):
     m.count["comments"] += n
     return xml
 
-
 def scrub_threaded_comments(xml, m):
     xml, n = re.subn(r"<text>.*?</text>", "<text>redacted</text>", xml, flags=re.DOTALL)
     m.count["comments"] += n
     return re.sub(r'\b(displayName|userId|providerId)="[^"]*"', r'\1="redacted"', xml)
 
-
-    """Strip cached chart data and redact titles and labels in a chart XML part."""
 def scrub_chart(xml, m):
+    """Strip cached chart data and redact titles and labels in a chart XML part."""
     xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.DOTALL)  # saved data copies
     xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)  # titles, labels
     m.count["charts"] += n1 + n2
     return xml
-
 
 def pick_handler(name):
     """Which scrubbing function (if any) applies to this part of the file."""
@@ -151,14 +175,16 @@ def pick_handler(name):
         return scrub_chart
     return None  # copied byte-for-byte (this is how VBA stays intact)
 
-
-def scrub_file(src, dst):
+def scrub_file(src, dst, keep_headers=False):
     """Write a scrubbed copy of src to dst. Returns (counts, things_to_review)."""
     m, untouched = Masker(), []
+    m.keep_headers = keep_headers
     with zipfile.ZipFile(src) as zin:
         if "xl/workbook.xml" not in zin.namelist():
             raise ScrubError("This does not look like a normal .xlsx/.xlsm workbook "
                              "(.xlsb is not supported).")
+        if keep_headers:
+            m.keep = header_strings(zin)
         with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
                 data = zin.read(item)
@@ -185,6 +211,7 @@ def main(argv=None):
         description="Mask confidential data in an Excel file (.xlsx / .xlsm) on this computer.")
     parser.add_argument("file", help="the Excel file to scrub")
     parser.add_argument("-o", "--output", help="where to save the result (default: NAME.scrubbed.ext)")
+    parser.add_argument("--keep-headers", action="store_true", help="leave row-1 text readable (column names)")
     args = parser.parse_args(argv)
 
     stem, ext = os.path.splitext(args.file)
@@ -197,7 +224,7 @@ def main(argv=None):
         return fail("this is not a modern Excel file. It may be password-protected, or an old "
                     ".xls/.xlsb file. Remove the password or 'Save As' .xlsx/.xlsm and try again.")
     try:
-        counts, review = scrub_file(args.file, dst)
+        counts, review = scrub_file(args.file, dst, args.keep_headers)
     except (ScrubError, zipfile.BadZipFile, UnicodeDecodeError) as err:
         if os.path.exists(dst):
             os.remove(dst)
@@ -210,6 +237,8 @@ def main(argv=None):
     print("  comments/properties/charts cleaned: %d" % (
         counts["comments"] + counts["properties"] + counts["charts"]))
     print("Kept as-is on purpose: formulas, sheet names, layout, VBA code.")
+    if args.keep_headers:
+        print("Row 1 text was KEPT readable (--keep-headers). Check it holds no real names.")
     if review:
         print("PLEASE CHECK before sending (copied unchanged, may contain real data):")
         for why in review:
