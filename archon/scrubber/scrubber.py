@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
 
 WHAT IT CHANGES
