@@ -36,35 +36,38 @@ def _get_columns(path: Path, table: str) -> list[str]:
     in_table = False
     for line in output.splitlines():
         line_stripped = line.strip()
-        # Fix 1: Match complete CREATE TABLE declaration only
+        # Match complete CREATE TABLE declaration only
         if ("CREATE TABLE" in line_stripped.upper() and
-                (f'"{table}"' in line_stripped or f"[{table}]" in line_stripped)):
+                (f'"{table}"' in line_stripped or
+                 f"[{table}]" in line_stripped)):
             in_table = True
             continue
         if in_table:
             if line_stripped.startswith(")") or line_stripped.startswith("];"):
                 break
             if line_stripped and not line_stripped.startswith("("):
-                # Fix 2: Parse complete bracket-delimited identifier
+                # Parse complete bracket-delimited identifier
                 # preserving embedded spaces like [Order ID]
                 match = re.match(r'[\["]([^\]"]+)[\]"]', line_stripped)
-                col = match.group(1) if match else line_stripped.split()[0].strip('",[]')
+                col = (match.group(1) if match
+                       else line_stripped.split()[0].strip('",[]'))
                 if col:
                     columns.append(col)
     return columns
 
 
 def _get_queries(path: Path) -> list[dict]:
-    """Get stored query names from MSysQueries using schema only — no row data."""
-    try:
-        output = _run(["mdb-tables", "-1", str(path)])
-        tables = [t for t in output.splitlines() if t != ""]
-        if "MSysQueries" not in tables:
-            return []
-        cols = _get_columns(path, "MSysQueries")
-        return [{"columns": cols}]
-    except Exception:
+    """Get stored query names from MSysQueries using system table discovery.
+
+    Uses -S flag to include system tables. Raises on failure so the
+    caller can route errors through the exceptions mechanism.
+    """
+    output = _run(["mdb-tables", "-1", "-S", str(path)])
+    tables = [t for t in output.splitlines() if t != ""]
+    if "MSysQueries" not in tables:
         return []
+    cols = _get_columns(path, "MSysQueries")
+    return [{"columns": cols}]
 
 
 def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
@@ -132,7 +135,7 @@ def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
             detail=f"accdb extraction failed: {e}",
         ))
 
-    # Fix 3: Explicitly call _get_queries and include in output
+    # Explicitly call _get_queries — failures reach exceptions handler
     try:
         queries = _get_queries(path)
         if queries:
