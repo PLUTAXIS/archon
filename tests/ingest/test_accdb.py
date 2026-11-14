@@ -1,9 +1,11 @@
 
+
 import platform
 from pathlib import Path
 
 import archon.ingest.accdb as accdb
 from archon.ingest.accdb import extract_accdb
+
 
 FIXTURE = Path(__file__).parent.parent.parent / "fake_client_db.accdb"
 
@@ -32,13 +34,13 @@ def test_accdb_returns_tables_and_no_row_data():
 
 
 def test_accdb_exceptions_use_valid_codes():
-    """Any exceptions raised must use valid Contract A codes."""
+    """Any exceptions raised must use valid Contract A exception objects."""
     if not FIXTURE.exists():
         return
 
-    from archon.contracts.extract import ExtractException
-
     _, exceptions = extract_accdb(FIXTURE)
+
+    from archon.contracts.extract import ExtractException
 
     for exc in exceptions:
         assert isinstance(exc, ExtractException)
@@ -56,25 +58,28 @@ def test_accdb_table_names_preserve_whitespace():
             return
 
     tables, _ = extract_accdb(FIXTURE)
+
     assert isinstance(tables, list)
 
 
-def test_msysqueries_included_with_extracted_columns(monkeypatch, tmp_path):
+def test_msysqueries_included_with_extracted_columns(
+    monkeypatch,
+    tmp_path,
+):
     """MSysQueries must be included with its actual column metadata."""
 
     monkeypatch.setattr(accdb.platform, "system", lambda: "Linux")
 
-    # Simulate ordinary table discovery.
     monkeypatch.setattr(
         accdb,
         "_get_tables",
         lambda path: ["Customers"],
     )
 
-    # Simulate system-table discovery.
     def fake_run(cmd, timeout=accdb.MDBTOOLS_TIMEOUT):
         if cmd[:3] == ["mdb-tables", "-1", "-S"]:
             return "MSysQueries\n"
+
         raise AssertionError(f"Unexpected command: {cmd}")
 
     monkeypatch.setattr(accdb, "_run", fake_run)
@@ -107,7 +112,12 @@ def test_msysqueries_included_with_extracted_columns(monkeypatch, tmp_path):
 
 
 def test_msysqueries_schema_uses_targeted_mdb_schema(monkeypatch):
-    """MSysQueries schema must be requested using mdb-schema -T."""
+    """
+    MSysQueries schema must use targeted mdb-schema -T.
+
+    The opening parenthesis is deliberately on the next line,
+    matching the mdbtools 1.0.1 output reported by CodeRabbit.
+    """
 
     commands = []
 
@@ -115,7 +125,8 @@ def test_msysqueries_schema_uses_targeted_mdb_schema(monkeypatch):
         commands.append(cmd)
 
         return (
-            "CREATE TABLE [MSysQueries] (\n"
+            "CREATE TABLE [MSysQueries]\n"
+            "(\n"
             "    [Name] TEXT,\n"
             "    [Flag] LONG,\n"
             "    [Expression] MEMO\n"
@@ -135,7 +146,12 @@ def test_msysqueries_schema_uses_targeted_mdb_schema(monkeypatch):
         "-T",
         "MSysQueries",
     ]
-    assert columns == ["Name", "Flag", "Expression"]
+
+    assert columns == [
+        "Name",
+        "Flag",
+        "Expression",
+    ]
 
 
 def test_query_extraction_failure_reaches_exceptions(
@@ -146,22 +162,20 @@ def test_query_extraction_failure_reaches_exceptions(
 
     monkeypatch.setattr(accdb.platform, "system", lambda: "Linux")
 
-    # No ordinary tables are needed for this test.
     monkeypatch.setattr(
         accdb,
         "_get_tables",
         lambda path: [],
     )
 
-    # Make system-table discovery succeed.
     def fake_run(cmd, timeout=accdb.MDBTOOLS_TIMEOUT):
         if cmd[:3] == ["mdb-tables", "-1", "-S"]:
             return "MSysQueries\n"
+
         raise AssertionError(f"Unexpected command: {cmd}")
 
     monkeypatch.setattr(accdb, "_run", fake_run)
 
-    # Simulate a failure while reading MSysQueries columns.
     def failing_get_columns(path, table):
         raise RuntimeError("Simulated MSysQueries schema failure")
 

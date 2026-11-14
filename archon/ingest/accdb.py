@@ -1,7 +1,8 @@
 
+
+import platform
 import re
 import subprocess
-import platform
 from pathlib import Path
 
 from archon.contracts.extract import ExtractException
@@ -10,224 +11,235 @@ from archon.contracts.extract import ExtractException
 MDBTOOLS_TIMEOUT = 30
 
 
-def _run(cmd: list[str], timeout: int = MDBTOOLS_TIMEOUT) -> str:
-    """Run a subprocess command and return stdout. Raises on failure."""
+def _run(cmd, timeout=MDBTOOLS_TIMEOUT):
+    """Run an mdbtools command and return its standard output."""
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         timeout=timeout,
+        check=False,
     )
 
     if result.returncode != 0:
         raise RuntimeError(
-            result.stderr.strip() or f"Command failed: {cmd}"
+            result.stderr.strip()
+            or f"Command failed with exit code {result.returncode}: {cmd}"
         )
 
     return result.stdout
 
 
-def _get_tables(path: Path) -> list[str]:
-    """Return table names from accdb. Preserves whitespace in names."""
+def _get_tables(path):
+    """Return Access table names without stripping meaningful whitespace."""
     output = _run(["mdb-tables", "-1", str(path)])
 
-    # Do NOT strip() — Access allows trailing spaces in table names.
-    return [t for t in output.splitlines() if t != ""]
+    # Remove only line endings. Do not strip table names themselves.
+    return [
+        line.rstrip("\r\n")
+        for line in output.splitlines()
+        if line.rstrip("\r\n")
+    ]
 
 
-def _get_columns(path: Path, table: str) -> list[str]:
-    """Return column names for one table using targeted mdb-schema."""
-    output = _run([
-        "mdb-schema",
-        "-T",
-        table,
-        str(path),
-        "access",
-    ])
+def _get_columns(path, table):
+    """Extract column names for one table using targeted mdb-schema output."""
+    output = _run(
+        [
+            "mdb-schema",
+            "-T",
+            table,
+            str(path),
+            "access",
+        ]
+    )
 
     columns = []
     in_table = False
 
+    # Match both:
+    # CREATE TABLE [Example] (
+    # and:
+    # CREATE TABLE [Example]
+    # (
+    table_pattern = (
+        rf'^CREATE\s+TABLE\s+(?:\[{re.escape(table)}\]|'
+        rf'"{re.escape(table)}"|{re.escape(table)})'
+        rf'(?:\s*\(|\s*$)'
+    )
+
     for line in output.splitlines():
         line_stripped = line.strip()
 
-        # Match the CREATE TABLE declaration for the requested table.
-        if re.match(
-            rf'^CREATE\s+TABLE\s+(?:\[{re.escape(table)}\]|'
-            rf'"{re.escape(table)}"|{re.escape(table)})(?:\s|\()',
-            line_stripped,
-            re.IGNORECASE,
-        ):
-            in_table = True
-            continue
-
         if not in_table:
+            if re.match(
+                table_pattern,
+                line_stripped,
+                re.IGNORECASE,
+            ):
+                in_table = True
             continue
 
-        # Stop when the CREATE TABLE block ends.
         if line_stripped.startswith(")"):
             break
 
         if not line_stripped or line_stripped.startswith("("):
             continue
 
-        # Ignore SQL constraints rather than treating them as columns.
-        if re.match(
-            r'^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|'
-            r'UNIQUE|INDEX)\b',
-            line_stripped,
-            re.IGNORECASE,
-        ):
-            continue
-
-        # Preserve complete identifiers, including embedded spaces.
+        # Column definitions generally begin with a quoted or bracketed
+        # identifier. Capture the identifier without its delimiters.
         match = re.match(
-            r'^\[([^\]]+)\]|^"([^"]+)"|^`([^`]+)`',
-            line_stripped,
+            r'^\s*(?:\[([^\]]+)\]|"([^"]+)"|`([^`]+)`)',
+            line,
         )
 
         if match:
-            col = next(
+            column_name = next(
                 group for group in match.groups() if group is not None
             )
-        else:
-            col = line_stripped.split()[0].strip('",[]')
-
-        if col:
-            columns.append(col)
+            columns.append(column_name)
 
     return columns
 
 
-def _get_queries(path: Path) -> list[dict]:
-    """Discover MSysQueries and extract its schema.
-
-    Uses -S to include system tables and -T to retrieve
-    the specific MSysQueries schema.
-    """
+def _get_queries(path):
+    """Return metadata for Access queries represented in MSysQueries."""
     output = _run(["mdb-tables", "-1", "-S", str(path)])
 
-    tables = [t for t in output.splitlines() if t != ""]
+    system_tables = [
+        line.rstrip("\r\n")
+        for line in output.splitlines()
+        if line.rstrip("\r\n")
+    ]
 
-    if "MSysQueries" not in tables:
+    if "MSysQueries" not in system_tables:
         return []
 
-    # Targeted schema call is important:
-    # mdb-schema without -T can exclude system-table schemas.
-    cols = _get_columns(path, "MSysQueries")
+    columns = _get_columns(path, "MSysQueries")
 
-    return [{"columns": cols}]
+    return [
+        {
+            "name": "MSysQueries",
+            "columns": columns,
+        }
+    ]
 
 
-def extract_accdb(
-    path: Path,
-) -> tuple[list[dict], list[ExtractException]]:
-    """Extract table and column metadata from an accdb file.
+def _extract_windows(path):
+    """Extract table and column metadata using the Microsoft Access ODBC driver."""
+    try:
+        import pyodbc
+    except ImportError as exc:
+        raise RuntimeError(
+            "pyodbc is required for Access extraction on Windows"
+        ) from exc
 
-    Returns (tables, exceptions).
-    Schema only — no row data ever.
+    connection_string = (
+        "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
+        f"DBQ={Path(path).resolve()};"
+    )
 
-    Uses mdbtools on Linux and pyodbc as a Windows development fallback.
+    tables = []
+
+    connection = pyodbc.connect(connection_string)
+    try:
+        cursor = connection.cursor()
+
+        for table_info in cursor.tables(tableType="TABLE"):
+            table_name = table_info.table_name
+
+            column_names = [
+                column.column_name
+                for column in cursor.columns(table=table_name)
+            ]
+
+            tables.append(
+                {
+                    "name": table_name,
+                    "columns": column_names,
+                }
+            )
+    finally:
+        connection.close()
+
+    return tables
+
+
+def extract_accdb(path):
+    """
+    Extract table and column metadata from an Access database.
+
+    Returns:
+        A tuple containing:
+        - A list of table metadata dictionaries.
+        - A list of ExtractException objects.
+
+    Row data is never extracted.
     """
     path = Path(path)
     tables = []
-    exceptions: list[ExtractException] = []
+    exceptions = []
 
-    # Windows development fallback.
     if platform.system() == "Windows":
         try:
-            import pyodbc
-
-            conn_str = (
-                r"Driver={Microsoft Access Driver (*.mdb, *.accdb)};"
-                f"DBQ={path};"
+            tables = _extract_windows(path)
+        except Exception as exc:
+            exceptions.append(
+                ExtractException(
+                    code="E_OLE_PARSE_FAILED",
+                    severity="error",
+                    detail=f"Access database extraction failed: {exc}",
+                )
             )
-
-            conn = pyodbc.connect(conn_str)
-
-            try:
-                cursor = conn.cursor()
-
-                for row in cursor.tables(tableType="TABLE"):
-                    table_name = row.table_name
-
-                    cols = [
-                        col.column_name
-                        for col in cursor.columns(table=table_name)
-                    ]
-
-                    tables.append({
-                        "name": table_name,
-                        "columns": cols,
-                    })
-
-            finally:
-                conn.close()
-
-        except Exception as e:
-            exceptions.append(ExtractException(
-                code="E_OLE_PARSE_FAILED",
-                severity="error",
-                sheet=None,
-                detail=f"Windows accdb extraction failed: {e}",
-            ))
 
         return tables, exceptions
 
-    # Linux extraction using mdbtools.
+    # Linux/macOS extraction using mdbtools.
     try:
         table_names = _get_tables(path)
 
         for table_name in table_names:
             try:
-                cols = _get_columns(path, table_name)
+                columns = _get_columns(path, table_name)
 
-                tables.append({
-                    "name": table_name,
-                    "columns": cols,
-                })
+                tables.append(
+                    {
+                        "name": table_name,
+                        "columns": columns,
+                    }
+                )
+            except Exception as exc:
+                exceptions.append(
+                    ExtractException(
+                        code="E_OLE_PARSE_FAILED",
+                        severity="warn",
+                        detail=(
+                            f"Table extraction failed for "
+                            f"{table_name}: {exc}"
+                        ),
+                    )
+                )
 
-            except Exception as e:
-                exceptions.append(ExtractException(
-                    code="E_OLE_PARSE_FAILED",
-                    severity="warn",
-                    sheet=None,
-                    detail=(
-                        f"Failed to read columns for table "
-                        f"{table_name}: {e}"
-                    ),
-                ))
-
-    except FileNotFoundError:
-        raise RuntimeError(
-            "mdbtools not found. Install with: apt-get install mdbtools"
+    except Exception as exc:
+        exceptions.append(
+            ExtractException(
+                code="E_OLE_PARSE_FAILED",
+                severity="error",
+                detail=f"Access table listing failed: {exc}",
+            )
         )
 
-    except Exception as e:
-        exceptions.append(ExtractException(
-            code="E_OLE_PARSE_FAILED",
-            severity="error",
-            sheet=None,
-            detail=f"accdb extraction failed: {e}",
-        ))
-
-    # Explicitly discover and extract MSysQueries.
-    # Any failure is routed into the exceptions output.
+    # Extract the system query metadata separately.
     try:
-        queries = _get_queries(path)
-
-        if queries:
-            tables.append({
-                "name": "MSysQueries",
-                "columns": queries[0].get("columns", []),
-            })
-
-    except Exception as e:
-        exceptions.append(ExtractException(
-            code="E_OLE_PARSE_FAILED",
-            severity="warn",
-            sheet=None,
-            detail=f"MSysQueries extraction failed: {e}",
-        ))
+        query_tables = _get_queries(path)
+        tables.extend(query_tables)
+    except Exception as exc:
+        exceptions.append(
+            ExtractException(
+                code="E_OLE_PARSE_FAILED",
+                severity="warn",
+                detail=f"MSysQueries extraction failed: {exc}",
+            )
+        )
 
     return tables, exceptions
