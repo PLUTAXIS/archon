@@ -1,14 +1,20 @@
 import hashlib
+import os
 from pathlib import Path
 
-from oletools.olevba import VBA_Parser, VBA_Project
+from oletools.olevba import VBA_Parser
 
 from archon.contracts.extract import VbaModule, ExtractException
 
 
 def _classify(name: str, code: str) -> str:
-    """Classify a VBA module type from its name and source."""
-    name_lower = name.lower()
+    """Classify a VBA module type from its name and source.
+    
+    Strips file extension before comparing module identifiers so that
+    ThisWorkbook.cls correctly classifies as thisworkbook.
+    """
+    # Fix 1: Strip extension before comparison
+    name_lower = os.path.splitext(name)[0].lower()
     if name_lower == "thisworkbook":
         return "thisworkbook"
     if code.startswith("VERSION 1.0 CLASS"):
@@ -42,7 +48,9 @@ def extract_vba(path: Path) -> tuple[list[VbaModule], list[ExtractException]]:
             for _filename, _stream, name, code in vp.extract_macros():
                 if not name or not code:
                     continue
-                sha = hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest()
+                sha = hashlib.sha256(
+                    code.encode("utf-8", errors="replace")
+                ).hexdigest()
                 modules.append(VbaModule(
                     name=name,
                     type=_classify(name, code),
@@ -77,5 +85,19 @@ def extract_vba(path: Path) -> tuple[list[VbaModule], list[ExtractException]]:
     finally:
         if vp is not None:
             vp.close()
+
+    # Fix 2: If VBA was detected but no modules extracted, record an exception
+    if vp is not None:
+        try:
+            has_macros = vp.detect_vba_macros()
+        except Exception:
+            has_macros = False
+        if has_macros and not modules and not exceptions:
+            exceptions.append(ExtractException(
+                code="E_OLE_PARSE_FAILED",
+                severity="warn",
+                sheet=None,
+                detail="VBA project detected but no modules could be extracted.",
+            ))
 
     return modules, exceptions

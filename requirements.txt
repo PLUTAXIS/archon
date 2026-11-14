@@ -1,5 +1,5 @@
 networkx
-pydantic
+pydantic>=2.14.2
 pytest
 watchdog
 openpyxl

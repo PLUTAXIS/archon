@@ -274,7 +274,8 @@ def extract(path: Path) -> RawExtract:
                     if cell.data_type == "f":
                         if hasattr(cell.value, "text"):
                             # Array formula
-                            formula = "=" + str(cell.value.text)
+                            array_text = str(cell.value.text)
+                            formula = array_text if array_text.startswith("=") else "=" + array_text
                             is_array = True
                         elif isinstance(cell.value, str) and cell.value.startswith("="):
                             formula = cell.value

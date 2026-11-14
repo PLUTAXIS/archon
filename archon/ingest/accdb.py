@@ -1,3 +1,4 @@
+import re
 import subprocess
 import platform
 from pathlib import Path
@@ -35,14 +36,19 @@ def _get_columns(path: Path, table: str) -> list[str]:
     in_table = False
     for line in output.splitlines():
         line_stripped = line.strip()
-        if f'"{table}"' in line_stripped or f"[{table}]" in line_stripped:
+        # Fix 1: Match complete CREATE TABLE declaration only
+        if ("CREATE TABLE" in line_stripped.upper() and
+                (f'"{table}"' in line_stripped or f"[{table}]" in line_stripped)):
             in_table = True
             continue
         if in_table:
             if line_stripped.startswith(")") or line_stripped.startswith("];"):
                 break
             if line_stripped and not line_stripped.startswith("("):
-                col = line_stripped.split()[0].strip('",[]')
+                # Fix 2: Parse complete bracket-delimited identifier
+                # preserving embedded spaces like [Order ID]
+                match = re.match(r'[\["]([^\]"]+)[\]"]', line_stripped)
+                col = match.group(1) if match else line_stripped.split()[0].strip('",[]')
                 if col:
                     columns.append(col)
     return columns
@@ -124,6 +130,22 @@ def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
             severity="error",
             sheet=None,
             detail=f"accdb extraction failed: {e}",
+        ))
+
+    # Fix 3: Explicitly call _get_queries and include in output
+    try:
+        queries = _get_queries(path)
+        if queries:
+            tables.append({
+                "name": "MSysQueries",
+                "columns": queries[0].get("columns", []),
+            })
+    except Exception as e:
+        exceptions.append(ExtractException(
+            code="E_OLE_PARSE_FAILED",
+            severity="warn",
+            sheet=None,
+            detail=f"MSysQueries extraction failed: {e}",
         ))
 
     return tables, exceptions
