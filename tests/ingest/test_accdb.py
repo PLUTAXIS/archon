@@ -1,5 +1,8 @@
+
 import platform
 from pathlib import Path
+
+import archon.ingest.accdb as accdb
 from archon.ingest.accdb import extract_accdb
 
 FIXTURE = Path(__file__).parent.parent.parent / "fake_client_db.accdb"
@@ -34,6 +37,7 @@ def test_accdb_exceptions_use_valid_codes():
         return
 
     from archon.contracts.extract import ExtractException
+
     _, exceptions = extract_accdb(FIXTURE)
 
     for exc in exceptions:
@@ -55,31 +59,126 @@ def test_accdb_table_names_preserve_whitespace():
     assert isinstance(tables, list)
 
 
-def test_query_extraction_failure_reaches_exceptions(tmp_path):
-    """If MSysQueries extraction fails it must appear in exceptions."""
-    fake = tmp_path / "fake.accdb"
-    fake.write_bytes(b"not a real accdb file")
+def test_msysqueries_included_with_extracted_columns(monkeypatch, tmp_path):
+    """MSysQueries must be included with its actual column metadata."""
 
-    if platform.system() == "Windows":
-        try:
-            import pyodbc
-        except ImportError:
-            return
-        _, exceptions = extract_accdb(fake)
-        assert isinstance(exceptions, list)
+    monkeypatch.setattr(accdb.platform, "system", lambda: "Linux")
+
+    # Simulate ordinary table discovery.
+    monkeypatch.setattr(
+        accdb,
+        "_get_tables",
+        lambda path: ["Customers"],
+    )
+
+    # Simulate system-table discovery.
+    def fake_run(cmd, timeout=accdb.MDBTOOLS_TIMEOUT):
+        if cmd[:3] == ["mdb-tables", "-1", "-S"]:
+            return "MSysQueries\n"
+        raise AssertionError(f"Unexpected command: {cmd}")
+
+    monkeypatch.setattr(accdb, "_run", fake_run)
+
+    def fake_get_columns(path, table):
+        if table == "Customers":
+            return ["CustomerID", "CustomerName"]
+
+        if table == "MSysQueries":
+            return ["Name", "Flag", "Expression"]
+
+        raise AssertionError(f"Unexpected table: {table}")
+
+    monkeypatch.setattr(accdb, "_get_columns", fake_get_columns)
+
+    tables, exceptions = extract_accdb(tmp_path / "fake.accdb")
+
+    msysqueries = [
+        table for table in tables
+        if table["name"] == "MSysQueries"
+    ]
+
+    assert len(msysqueries) == 1
+    assert msysqueries[0]["columns"] == [
+        "Name",
+        "Flag",
+        "Expression",
+    ]
+    assert not exceptions
 
 
-def test_msysqueries_included_when_present():
-    """MSysQueries metadata must appear in tables when fixture has stored queries."""
-    if not FIXTURE.exists():
-        return
+def test_msysqueries_schema_uses_targeted_mdb_schema(monkeypatch):
+    """MSysQueries schema must be requested using mdb-schema -T."""
 
-    if platform.system() == "Windows":
-        try:
-            import pyodbc
-        except ImportError:
-            return
+    commands = []
 
-    tables, _ = extract_accdb(FIXTURE)
-    names = [t["name"] for t in tables]
-    assert isinstance(names, list)
+    def fake_run(cmd, timeout=accdb.MDBTOOLS_TIMEOUT):
+        commands.append(cmd)
+
+        return (
+            "CREATE TABLE [MSysQueries] (\n"
+            "    [Name] TEXT,\n"
+            "    [Flag] LONG,\n"
+            "    [Expression] MEMO\n"
+            ");\n"
+        )
+
+    monkeypatch.setattr(accdb, "_run", fake_run)
+
+    columns = accdb._get_columns(
+        Path("fake.accdb"),
+        "MSysQueries",
+    )
+
+    assert commands
+    assert commands[0][:3] == [
+        "mdb-schema",
+        "-T",
+        "MSysQueries",
+    ]
+    assert columns == ["Name", "Flag", "Expression"]
+
+
+def test_query_extraction_failure_reaches_exceptions(
+    monkeypatch,
+    tmp_path,
+):
+    """MSysQueries extraction failures must be reported as warnings."""
+
+    monkeypatch.setattr(accdb.platform, "system", lambda: "Linux")
+
+    # No ordinary tables are needed for this test.
+    monkeypatch.setattr(
+        accdb,
+        "_get_tables",
+        lambda path: [],
+    )
+
+    # Make system-table discovery succeed.
+    def fake_run(cmd, timeout=accdb.MDBTOOLS_TIMEOUT):
+        if cmd[:3] == ["mdb-tables", "-1", "-S"]:
+            return "MSysQueries\n"
+        raise AssertionError(f"Unexpected command: {cmd}")
+
+    monkeypatch.setattr(accdb, "_run", fake_run)
+
+    # Simulate a failure while reading MSysQueries columns.
+    def failing_get_columns(path, table):
+        raise RuntimeError("Simulated MSysQueries schema failure")
+
+    monkeypatch.setattr(
+        accdb,
+        "_get_columns",
+        failing_get_columns,
+    )
+
+    tables, exceptions = extract_accdb(tmp_path / "fake.accdb")
+
+    assert not tables
+    assert len(exceptions) == 1
+
+    exc = exceptions[0]
+
+    assert exc.code == "E_OLE_PARSE_FAILED"
+    assert exc.severity == "warn"
+    assert "MSysQueries extraction failed" in exc.detail
+    assert "Simulated MSysQueries schema failure" in exc.detail

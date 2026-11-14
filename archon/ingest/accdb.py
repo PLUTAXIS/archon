@@ -1,3 +1,4 @@
+
 import re
 import subprocess
 import platform
@@ -17,88 +18,152 @@ def _run(cmd: list[str], timeout: int = MDBTOOLS_TIMEOUT) -> str:
         text=True,
         timeout=timeout,
     )
+
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or f"Command failed: {cmd}")
+        raise RuntimeError(
+            result.stderr.strip() or f"Command failed: {cmd}"
+        )
+
     return result.stdout
 
 
 def _get_tables(path: Path) -> list[str]:
     """Return table names from accdb. Preserves whitespace in names."""
     output = _run(["mdb-tables", "-1", str(path)])
-    # Do NOT strip() — Access allows trailing spaces in table names
+
+    # Do NOT strip() — Access allows trailing spaces in table names.
     return [t for t in output.splitlines() if t != ""]
 
 
 def _get_columns(path: Path, table: str) -> list[str]:
-    """Return column names for a table using mdb-schema. Never SELECT *."""
-    output = _run(["mdb-schema", str(path), "access"])
+    """Return column names for one table using targeted mdb-schema."""
+    output = _run([
+        "mdb-schema",
+        "-T",
+        table,
+        str(path),
+        "access",
+    ])
+
     columns = []
     in_table = False
+
     for line in output.splitlines():
         line_stripped = line.strip()
-        # Match complete CREATE TABLE declaration only
-        if ("CREATE TABLE" in line_stripped.upper() and
-                (f'"{table}"' in line_stripped or
-                 f"[{table}]" in line_stripped)):
+
+        # Match the CREATE TABLE declaration for the requested table.
+        if re.match(
+            rf'^CREATE\s+TABLE\s+(?:\[{re.escape(table)}\]|'
+            rf'"{re.escape(table)}"|{re.escape(table)})(?:\s|\()',
+            line_stripped,
+            re.IGNORECASE,
+        ):
             in_table = True
             continue
-        if in_table:
-            if line_stripped.startswith(")") or line_stripped.startswith("];"):
-                break
-            if line_stripped and not line_stripped.startswith("("):
-                # Parse complete bracket-delimited identifier
-                # preserving embedded spaces like [Order ID]
-                match = re.match(r'[\["]([^\]"]+)[\]"]', line_stripped)
-                col = (match.group(1) if match
-                       else line_stripped.split()[0].strip('",[]'))
-                if col:
-                    columns.append(col)
+
+        if not in_table:
+            continue
+
+        # Stop when the CREATE TABLE block ends.
+        if line_stripped.startswith(")"):
+            break
+
+        if not line_stripped or line_stripped.startswith("("):
+            continue
+
+        # Ignore SQL constraints rather than treating them as columns.
+        if re.match(
+            r'^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|'
+            r'UNIQUE|INDEX)\b',
+            line_stripped,
+            re.IGNORECASE,
+        ):
+            continue
+
+        # Preserve complete identifiers, including embedded spaces.
+        match = re.match(
+            r'^\[([^\]]+)\]|^"([^"]+)"|^`([^`]+)`',
+            line_stripped,
+        )
+
+        if match:
+            col = next(
+                group for group in match.groups() if group is not None
+            )
+        else:
+            col = line_stripped.split()[0].strip('",[]')
+
+        if col:
+            columns.append(col)
+
     return columns
 
 
 def _get_queries(path: Path) -> list[dict]:
-    """Get stored query names from MSysQueries using system table discovery.
+    """Discover MSysQueries and extract its schema.
 
-    Uses -S flag to include system tables. Raises on failure so the
-    caller can route errors through the exceptions mechanism.
+    Uses -S to include system tables and -T to retrieve
+    the specific MSysQueries schema.
     """
     output = _run(["mdb-tables", "-1", "-S", str(path)])
+
     tables = [t for t in output.splitlines() if t != ""]
+
     if "MSysQueries" not in tables:
         return []
+
+    # Targeted schema call is important:
+    # mdb-schema without -T can exclude system-table schemas.
     cols = _get_columns(path, "MSysQueries")
+
     return [{"columns": cols}]
 
 
-def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
+def extract_accdb(
+    path: Path,
+) -> tuple[list[dict], list[ExtractException]]:
     """Extract table and column metadata from an accdb file.
 
-    Returns (tables, exceptions). Schema only — no row data ever.
-    Uses mdbtools on Linux, pyodbc as Windows dev fallback only.
+    Returns (tables, exceptions).
+    Schema only — no row data ever.
+
+    Uses mdbtools on Linux and pyodbc as a Windows development fallback.
     """
     path = Path(path)
     tables = []
     exceptions: list[ExtractException] = []
 
+    # Windows development fallback.
     if platform.system() == "Windows":
         try:
             import pyodbc
+
             conn_str = (
                 r"Driver={Microsoft Access Driver (*.mdb, *.accdb)};"
                 f"DBQ={path};"
             )
+
             conn = pyodbc.connect(conn_str)
+
             try:
                 cursor = conn.cursor()
+
                 for row in cursor.tables(tableType="TABLE"):
                     table_name = row.table_name
+
                     cols = [
                         col.column_name
                         for col in cursor.columns(table=table_name)
                     ]
-                    tables.append({"name": table_name, "columns": cols})
+
+                    tables.append({
+                        "name": table_name,
+                        "columns": cols,
+                    })
+
             finally:
                 conn.close()
+
         except Exception as e:
             exceptions.append(ExtractException(
                 code="E_OLE_PARSE_FAILED",
@@ -106,27 +171,38 @@ def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
                 sheet=None,
                 detail=f"Windows accdb extraction failed: {e}",
             ))
+
         return tables, exceptions
 
-    # Linux path — mdbtools
+    # Linux extraction using mdbtools.
     try:
         table_names = _get_tables(path)
+
         for table_name in table_names:
             try:
                 cols = _get_columns(path, table_name)
-                tables.append({"name": table_name, "columns": cols})
+
+                tables.append({
+                    "name": table_name,
+                    "columns": cols,
+                })
+
             except Exception as e:
                 exceptions.append(ExtractException(
                     code="E_OLE_PARSE_FAILED",
                     severity="warn",
                     sheet=None,
-                    detail=f"Failed to read columns for table {table_name}: {e}",
+                    detail=(
+                        f"Failed to read columns for table "
+                        f"{table_name}: {e}"
+                    ),
                 ))
 
     except FileNotFoundError:
         raise RuntimeError(
             "mdbtools not found. Install with: apt-get install mdbtools"
         )
+
     except Exception as e:
         exceptions.append(ExtractException(
             code="E_OLE_PARSE_FAILED",
@@ -135,14 +211,17 @@ def extract_accdb(path: Path) -> tuple[list[dict], list[ExtractException]]:
             detail=f"accdb extraction failed: {e}",
         ))
 
-    # Explicitly call _get_queries — failures reach exceptions handler
+    # Explicitly discover and extract MSysQueries.
+    # Any failure is routed into the exceptions output.
     try:
         queries = _get_queries(path)
+
         if queries:
             tables.append({
                 "name": "MSysQueries",
                 "columns": queries[0].get("columns", []),
             })
+
     except Exception as e:
         exceptions.append(ExtractException(
             code="E_OLE_PARSE_FAILED",
