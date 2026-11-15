@@ -136,17 +136,21 @@ def _extract_windows(path):
     try:
         cursor = connection.cursor()
 
-        for table_info in cursor.tables(tableType="TABLE"):
-            table_name = table_info.table_name
+        # Materialize table names first — cursor.columns() replaces
+        # the cursor.tables() result set if not materialized
+        table_names = [
+            row.table_name
+            for row in cursor.tables(tableType="TABLE")
+        ]
 
-            # Fix: escape _ as [_] to prevent wildcard matching in pyodbc
-            # cursor.columns(table=...) treats _ as single-char wildcard
-            # so Order_Items would also return columns from OrderXItems
-            escaped = table_name.replace("_", "[_]")
+        for table_name in table_names:
+            # Do not use a table pattern with cursor.columns() —
+            # [_] is not a documented ODBC escape and may return no rows.
+            # Instead fetch all columns and filter by exact table name.
             column_names = [
-                column.column_name
-                for column in cursor.columns(table=escaped)
-                if column.table_name == table_name
+                col.column_name
+                for col in cursor.columns()
+                if col.table_name == table_name
             ]
 
             tables.append(
@@ -159,7 +163,6 @@ def _extract_windows(path):
         connection.close()
 
     return tables
-
 
 def extract_accdb(path):
     """Extract table and column metadata from an Access database.
