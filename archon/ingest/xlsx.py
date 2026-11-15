@@ -42,7 +42,7 @@ def _to_cached(value) -> float | str | bool | None:
 
 def _sheet_visibility(path: Path) -> dict[str, str]:
     """Read sheet visibility states directly from xl/workbook.xml in the zip.
-    
+
     Returns a dict of {sheet_name: visibility_state} where state is one of
     visible, hidden, veryHidden.
     """
@@ -61,51 +61,84 @@ def _sheet_visibility(path: Path) -> dict[str, str]:
     return states
 
 
+def _sheet_rel_map(path: Path) -> dict[str, str]:
+    """Build a mapping from sheet name to worksheet XML path using relationships.
+
+    Reads xl/workbook.xml to get sheet rId, then xl/_rels/workbook.xml.rels
+    to resolve each rId to its worksheet part path.
+    Avoids filename sorting which breaks with 10+ sheets.
+    Returns {sheet_name: part_path} e.g. {"Sheet1": "xl/worksheets/sheet1.xml"}
+    """
+    name_to_part: dict[str, str] = {}
+    ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    office_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            # Step 1: Read workbook.xml to get sheet name -> rId mapping
+            with z.open("xl/workbook.xml") as f:
+                tree = ET.parse(f)
+                sheets = tree.findall(".//ms:sheet", ns)
+                rid_to_name: dict[str, str] = {}
+                for sheet in sheets:
+                    rid = sheet.get(f"{{{office_ns}}}id", "")
+                    name = sheet.get("name", "")
+                    if rid and name:
+                        rid_to_name[rid] = name
+
+            # Step 2: Read workbook.xml.rels to get rId -> worksheet path
+            with z.open("xl/_rels/workbook.xml.rels") as f:
+                tree = ET.parse(f)
+                for rel in tree.findall(f"{{{rel_ns}}}Relationship"):
+                    rid = rel.get("Id", "")
+                    target = rel.get("Target", "")
+                    rel_type = rel.get("Type", "")
+                    if "worksheet" in rel_type and rid in rid_to_name:
+                        # Target is relative to xl/ folder
+                        if target.startswith("/"):
+                            part = target.lstrip("/")
+                        elif target.startswith("xl/"):
+                            part = target
+                        else:
+                            part = f"xl/{target}"
+                        name_to_part[rid_to_name[rid]] = part
+
+    except Exception:
+        pass
+
+    return name_to_part
+
+
 def _sheet_metadata(path: Path) -> dict[str, dict]:
     """Read merged cells and frozen panes for each sheet from the zip.
-    
-    Returns a dict of {sheet_name: {merged_cells: [...], frozen_panes: str|None}}
+
+    Uses relationship mapping to correctly pair sheet names with their
+    worksheet XML parts. Never relies on filename sorting.
     """
     metadata: dict[str, dict] = {}
     ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
     try:
+        rel_map = _sheet_rel_map(path)
         with zipfile.ZipFile(path, "r") as z:
-            # Find sheet file names from workbook relationships
-            with z.open("xl/workbook.xml") as f:
-                tree = ET.parse(f)
-                sheets = tree.findall(".//ms:sheet", ns)
-                sheet_names = [s.get("name", "") for s in sheets]
-
-            # Read each sheet XML
-            sheet_files = sorted([
-                n for n in z.namelist()
-                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
-            ])
-
-            for sheet_name, sheet_file in zip(sheet_names, sheet_files):
+            for sheet_name, part_path in rel_map.items():
                 merged = []
                 frozen = None
                 try:
-                    with z.open(sheet_file) as f:
+                    with z.open(part_path) as f:
                         tree = ET.parse(f)
-
-                        # Merged cells
                         for mc in tree.findall(".//ms:mergeCell", ns):
                             ref = mc.get("ref")
                             if ref:
                                 merged.append(ref)
-
-                        # Frozen panes
                         pane = tree.find(".//ms:pane", ns)
                         if pane is not None:
                             state = pane.get("state", "")
                             if state == "frozen":
                                 frozen = pane.get("topLeftCell")
-
                 except Exception:
                     pass
-
                 metadata[sheet_name] = {
                     "merged_cells": merged,
                     "frozen_panes": frozen,
@@ -141,29 +174,20 @@ def _defined_names(path: Path) -> list:
 
 
 def _tables(path: Path) -> list:
-    """Read table definitions from xl/tables/ in the zip."""
+    """Read table definitions from xl/tables/ in the zip.
+
+    Uses relationship mapping to correctly pair tables with their sheet names.
+    Never relies on filename sorting.
+    """
     from archon.contracts.extract import Table
     tables = []
-    ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
     try:
         with zipfile.ZipFile(path, "r") as z:
-            # Find which sheet each table belongs to via relationships
-            sheet_files = sorted([
-                n for n in z.namelist()
-                if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
-            ])
-
-            # Read workbook sheet names in order
-            with z.open("xl/workbook.xml") as f:
-                tree = ET.parse(f)
-                wb_ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-                sheet_names = [
-                    s.get("name", "")
-                    for s in tree.findall(".//ms:sheet", wb_ns)
-                ]
-
-            sheet_map = dict(zip(sheet_files, sheet_names))
+            # Use relationship mapping — never rely on filename sorting
+            rel_map = _sheet_rel_map(path)
+            # Invert to {part_path: sheet_name}
+            part_to_sheet = {v: k for k, v in rel_map.items()}
 
             # Find table files
             table_files = [
@@ -181,15 +205,20 @@ def _tables(path: Path) -> list:
 
                         # Find which sheet this table belongs to
                         sheet_name = ""
-                        for sf, sn in sheet_map.items():
-                            rel_file = sf.replace(
-                                "xl/worksheets/sheet",
-                                "xl/worksheets/_rels/sheet"
-                            ).replace(".xml", ".xml.rels")
+                        for part_path, sn in part_to_sheet.items():
+                            rel_file = (
+                                part_path.replace(
+                                    "xl/worksheets/",
+                                    "xl/worksheets/_rels/"
+                                ) + ".rels"
+                            )
                             try:
                                 with z.open(rel_file) as rf:
                                     rel_tree = ET.parse(rf)
-                                    for rel in rel_tree.findall(".//{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"):
+                                    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+                                    for rel in rel_tree.findall(
+                                        f"{{{rel_ns}}}Relationship"
+                                    ):
                                         target = rel.get("Target", "")
                                         if table_file.split("/")[-1] in target:
                                             sheet_name = sn
@@ -251,8 +280,8 @@ def extract(path: Path) -> RawExtract:
                 merged_cells=meta.get("merged_cells", []),
                 frozen_panes=meta.get("frozen_panes", None),
             ))
+
         # Build a lookup of cached values from second pass
-        # { (sheet_name, coordinate): value }
         cached_lookup: dict[tuple[str, str], object] = {}
         for ws_c in wb_cached.worksheets:
             for row in ws_c.iter_rows():
@@ -321,6 +350,7 @@ def extract(path: Path) -> RawExtract:
     # Sort deterministically
     sheets.sort(key=lambda s: s.index)
     cells.sort(key=lambda c: (c.sheet, c.row, c.col))
+
     # Extract VBA if present
     vba_modules: list = []
     vba_exceptions: list = []
@@ -329,24 +359,24 @@ def extract(path: Path) -> RawExtract:
         try:
             vba_modules, vba_exceptions = extract_vba(path)
         except Exception as e:
+            from archon.contracts.extract import ExtractException
             vba_exceptions.append(
-                __import__("archon.contracts.extract", fromlist=["ExtractException"])
-                .ExtractException(
+                ExtractException(
                     code="E_OLE_PARSE_FAILED",
                     severity="error",
                     sheet=None,
                     detail=str(e),
+                )
             )
-        )
 
     return RawExtract(
-    schema_version="1.0",
-    workbook_id=uuid.uuid4(),
-    source=source,
-    sheets=sheets,
-    cells=cells,
-    defined_names=_defined_names(path),
-    tables=_tables(path),
-    vba_modules=vba_modules,
-    exceptions=vba_exceptions,
-)
+        schema_version="1.0",
+        workbook_id=uuid.uuid4(),
+        source=source,
+        sheets=sheets,
+        cells=cells,
+        defined_names=_defined_names(path),
+        tables=_tables(path),
+        vba_modules=vba_modules,
+        exceptions=vba_exceptions,
+    )
