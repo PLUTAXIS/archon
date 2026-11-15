@@ -33,8 +33,6 @@ def _run(cmd, timeout=MDBTOOLS_TIMEOUT):
 def _get_tables(path):
     """Return Access table names without stripping meaningful whitespace."""
     output = _run(["mdb-tables", "-1", str(path)])
-
-    # Remove only line endings. Do not strip table names themselves.
     return [
         line.rstrip("\r\n")
         for line in output.splitlines()
@@ -57,11 +55,6 @@ def _get_columns(path, table):
     columns = []
     in_table = False
 
-    # Match both:
-    # CREATE TABLE [Example] (
-    # and:
-    # CREATE TABLE [Example]
-    # (
     table_pattern = (
         rf'^CREATE\s+TABLE\s+(?:\[{re.escape(table)}\]|'
         rf'"{re.escape(table)}"|{re.escape(table)})'
@@ -86,8 +79,6 @@ def _get_columns(path, table):
         if not line_stripped or line_stripped.startswith("("):
             continue
 
-        # Column definitions generally begin with a quoted or bracketed
-        # identifier. Capture the identifier without its delimiters.
         match = re.match(
             r'^\s*(?:\[([^\]]+)\]|"([^"]+)"|`([^`]+)`)',
             line,
@@ -148,9 +139,14 @@ def _extract_windows(path):
         for table_info in cursor.tables(tableType="TABLE"):
             table_name = table_info.table_name
 
+            # Fix: escape _ as [_] to prevent wildcard matching in pyodbc
+            # cursor.columns(table=...) treats _ as single-char wildcard
+            # so Order_Items would also return columns from OrderXItems
+            escaped = table_name.replace("_", "[_]")
             column_names = [
                 column.column_name
-                for column in cursor.columns(table=table_name)
+                for column in cursor.columns(table=escaped)
+                if column.table_name == table_name
             ]
 
             tables.append(
@@ -166,8 +162,7 @@ def _extract_windows(path):
 
 
 def extract_accdb(path):
-    """
-    Extract table and column metadata from an Access database.
+    """Extract table and column metadata from an Access database.
 
     Returns:
         A tuple containing:
@@ -194,14 +189,13 @@ def extract_accdb(path):
 
         return tables, exceptions
 
-    # Linux/macOS extraction using mdbtools.
+    # Linux/macOS extraction using mdbtools
     try:
         table_names = _get_tables(path)
 
         for table_name in table_names:
             try:
                 columns = _get_columns(path, table_name)
-
                 tables.append(
                     {
                         "name": table_name,
@@ -229,7 +223,7 @@ def extract_accdb(path):
             )
         )
 
-    # Extract the system query metadata separately.
+    # Extract system query metadata separately
     try:
         query_tables = _get_queries(path)
         tables.extend(query_tables)
