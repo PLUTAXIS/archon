@@ -1,7 +1,7 @@
-﻿[project]
+[project]
 name = "archon"
 version = "0.1.0"
-description = "ARCHON â€” deterministic spreadsheet audit engine: extracts, analyzes and explains Excel/Access models without an LLM"
+description = "ARCHON Ã¢â‚¬â€ deterministic spreadsheet audit engine: extracts, analyzes and explains Excel/Access models without an LLM"
 readme = "README.md"
 authors = [
     { name = "Wriksg", email = "wriksankarghosh2006@gmail.com" }
