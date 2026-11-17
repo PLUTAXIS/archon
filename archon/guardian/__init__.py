@@ -1,0 +1,1 @@
+"""Archon Guardian: deterministic security and governance foundation."""
