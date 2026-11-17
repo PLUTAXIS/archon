@@ -1,0 +1,68 @@
+{
+  "reviewers": [
+    "Senpai-Sasaki",
+    "Wriksg",
+    "mdsabakarim362",
+    "Mainak-Ghosh-351",
+    "Deepsikha-bit",
+    "Mainak056",
+    "Sneha-das07",
+    "arnablast076"
+  ],
+  "ignore_requested": [
+    "sleepyysoulss-cmd"
+  ],
+  "away": [],
+  "reviewers_per_pr": 1,
+  "skip_authors": [
+    "dependabot[bot]"
+  ],
+  "areas": {
+    "scrubber": [
+      "archon/scrubber/*",
+      "tests/*scrub*"
+    ],
+    "graph": [
+      "archon/*graph*",
+      "tests/*graph*",
+      "samples/*graph*"
+    ],
+    "ingestion": [
+      "archon/*ingest*",
+      "*ingestion_core*",
+      "tests/*ingest*"
+    ],
+    "web": [
+      "archon-web/*"
+    ],
+    "ci": [
+      ".github/*"
+    ],
+    "docs": [
+      "*.md",
+      "docs/*"
+    ]
+  },
+  "source_globs": [
+    "archon/*.py",
+    "ingestion_core.py"
+  ],
+  "test_globs": [
+    "tests/*",
+    "*test_*.py",
+    "*.test.*",
+    "*.spec.*"
+  ],
+  "golden_regex": "golden.*\\.(json|txt|sha256|hash)$|^tests/golden/",
+  "golden_label": "golden-update",
+  "data_regex": "^(Dropzone|Archive_Processed|For_Mainak|For_Senpai)/|\\.(xlsx|xlsm|xls|mdb|accdb)$",
+  "data_allow_globs": [
+    "samples/*",
+    "tests/*",
+    "*.gitkeep"
+  ],
+  "data_label": "data-approved",
+  "large_pr_lines": 500,
+  "min_description_chars": 20,
+  "stale_review_days": 3
+}

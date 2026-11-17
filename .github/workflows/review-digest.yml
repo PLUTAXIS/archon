@@ -1,0 +1,25 @@
+name: Review digest
+
+on:
+  schedule:
+    - cron: '30 3 * * 1-5'   # 09:00 IST, Monday to Friday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+  checks: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the review queue issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # Optional: a Discord or Slack incoming-webhook URL stored as a repo secret.
+          DIGEST_WEBHOOK_URL: ${{ secrets.DIGEST_WEBHOOK_URL }}
+        run: python3 .github/scripts/archon_bot.py digest
