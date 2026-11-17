@@ -1,0 +1,21 @@
+scrubber:
+  - changed-files:
+      - any-glob-to-any-file: ['archon/scrubber/**', 'tests/**/*scrub*']
+graph:
+  - changed-files:
+      - any-glob-to-any-file: ['archon/**/*graph*', 'tests/**/*graph*', 'samples/**/*graph*']
+web:
+  - changed-files:
+      - any-glob-to-any-file: 'archon-web/**'
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
+tests:
+  - changed-files:
+      - any-glob-to-any-file: 'tests/**'
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*.md', 'docs/**']
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['requirements*.txt', 'pyproject.toml', 'archon-web/package*.json']
