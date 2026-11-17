@@ -1,0 +1,59 @@
+name: Repo guards
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  data-guard:
+    # A maintainer can bypass with the "data-approved" label.
+    # A skipped job counts as passing for required checks.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'data-approved') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Block raw or production data files
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed=$(git diff --name-only --diff-filter=AM "origin/${BASE_REF}...HEAD")
+          bad=$(echo "$changed" \
+            | grep -Ei '^(Dropzone|Archive_Processed|For_Mainak|For_Senpai)/|\.(xlsx|xlsm|xls|mdb|accdb)$' \
+            | grep -Ev '^(samples|tests)/' \
+            | grep -Ev '\.gitkeep$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::This PR adds or changes files that look like raw or production data:"
+            echo "$bad"
+            echo "If this is intentional, a maintainer can add the 'data-approved' label."
+            exit 1
+          fi
+
+  golden-guard:
+    # Changing the golden determinism hash must be a deliberate, labeled act.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'golden-update') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Block unlabeled golden hash changes
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          # TODO: adjust this regex to match where your golden hash actually lives.
+          GOLDEN_PATTERN: 'golden.*\.(json|txt|sha256|hash)$|^tests/golden/'
+        run: |
+          changed=$(git diff --name-only --diff-filter=AMD "origin/${BASE_REF}...HEAD")
+          hit=$(echo "$changed" | grep -Ei "$GOLDEN_PATTERN" || true)
+          if [ -n "$hit" ]; then
+            echo "::error::Golden determinism files changed without the 'golden-update' label:"
+            echo "$hit"
+            echo "If the change is intended, explain why in the PR and add the 'golden-update' label."
+            exit 1
+          fi
