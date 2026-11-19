@@ -73,3 +73,43 @@ def test_vba_source_is_verbatim():
         # Verify source has real line structure
         assert "\n" in module.source or len(module.source) > 0, \
             f"Module {module.name} source has no line structure"
+
+def test_empty_module_recorded_as_exception():
+    """Modules with no name or code must be recorded as exceptions."""
+    from unittest.mock import patch, MagicMock
+
+    mock_vp = MagicMock()
+    mock_vp.detect_vba_macros.return_value = True
+    # Return one module with no name and no code
+    mock_vp.extract_macros.return_value = [
+        ("file", "stream", "", ""),
+    ]
+    mock_vp.modules_ = []
+
+    with patch("archon.ingest.vba.VBA_Parser", return_value=mock_vp):
+        modules, exceptions = extract_vba(Path("fake.xlsm"))
+
+    assert modules == [], "Empty module should not be in modules list"
+    assert len(exceptions) > 0, "Empty module should produce an exception"
+    assert exceptions[0].code == "E_OLE_PARSE_FAILED"
+
+
+def test_partial_extraction_records_exceptions():
+    """When some modules are empty, exceptions are recorded for each skip."""
+    from unittest.mock import patch, MagicMock
+
+    mock_vp = MagicMock()
+    mock_vp.detect_vba_macros.return_value = True
+    # One valid module and one with no code
+    mock_vp.extract_macros.return_value = [
+        ("file", "stream", "Module1", "Sub Test()\nEnd Sub\n"),
+        ("file", "stream", "Module2", ""),
+    ]
+    mock_vp.modules_ = []
+
+    with patch("archon.ingest.vba.VBA_Parser", return_value=mock_vp):
+        modules, exceptions = extract_vba(Path("fake.xlsm"))
+
+    assert len(modules) == 1, "Only valid module should be extracted"
+    assert len(exceptions) == 1, "Skipped module should produce an exception"
+    assert exceptions[0].code == "E_OLE_PARSE_FAILED"

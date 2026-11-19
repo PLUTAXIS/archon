@@ -7,20 +7,47 @@ from oletools.olevba import VBA_Parser
 from archon.contracts.extract import VbaModule, ExtractException
 
 
-def _classify(name: str, code: str) -> str:
-    """Classify a VBA module type from its name and source.
-    
-    Strips file extension before comparing module identifiers so that
-    ThisWorkbook.cls correctly classifies as thisworkbook.
+# oletools module type constants
+MODULETYPE_CLASS = "Class"
+MODULETYPE_DOCUMENT = "Document"
+
+
+def _classify_by_metadata(vp, name: str, code: str) -> str:
+    """Classify a VBA module using oletools project metadata.
+
+    Uses vp.modules_ metadata when available to correctly identify
+    class and document modules regardless of filename prefix.
+    Falls back to code-header and name-based heuristics.
     """
-    # Fix 1: Strip extension before comparison
     name_lower = os.path.splitext(name)[0].lower()
+
+    # Check thisworkbook first — always a document module
     if name_lower == "thisworkbook":
         return "thisworkbook"
-    if code.startswith("VERSION 1.0 CLASS"):
+
+    # Use oletools module metadata if available
+    try:
+        if hasattr(vp, "modules_") and vp.modules_:
+            for mod in vp.modules_:
+                mod_name = getattr(mod, "name", "") or ""
+                if os.path.splitext(mod_name)[0].lower() == name_lower:
+                    mod_type = getattr(mod, "type", "") or ""
+                    if mod_type == MODULETYPE_DOCUMENT:
+                        return "sheet"
+                    if mod_type == MODULETYPE_CLASS:
+                        return "class"
+    except Exception:
+        pass
+
+    # Fall back to code header — attribute-led class modules start with this
+    if code.lstrip().startswith("VERSION 1.0 CLASS"):
         return "class"
-    if any(name_lower.startswith(p) for p in ("sheet", "blad", "feuil", "tabelle")):
+
+    # Fall back to name prefix for sheet modules
+    if any(name_lower.startswith(p) for p in
+           ("sheet", "blad", "feuil", "tabelle")):
         return "sheet"
+
     return "standard"
 
 
@@ -29,8 +56,8 @@ def extract_vba(path: Path) -> tuple[list[VbaModule], list[ExtractException]]:
 
     Returns a tuple of (modules, exceptions).
     Raises if the VBA project is unreadable and not password-locked.
-    Never returns an empty list silently — either modules are found,
-    an exception is recorded, or an error is raised.
+    Records an exception for every skipped or failed module so partial
+    extraction is never reported as successful.
     """
     path = Path(path)
     modules: list[VbaModule] = []
@@ -46,14 +73,38 @@ def extract_vba(path: Path) -> tuple[list[VbaModule], list[ExtractException]]:
 
         try:
             for _filename, _stream, name, code in vp.extract_macros():
-                if not name or not code:
+                # Record skipped modules instead of silently dropping them
+                if not name and not code:
+                    exceptions.append(ExtractException(
+                        code="E_OLE_PARSE_FAILED",
+                        severity="warn",
+                        sheet=None,
+                        detail="VBA module skipped: both name and code are empty.",
+                    ))
                     continue
+                if not name:
+                    exceptions.append(ExtractException(
+                        code="E_OLE_PARSE_FAILED",
+                        severity="warn",
+                        sheet=None,
+                        detail="VBA module skipped: module has no name.",
+                    ))
+                    continue
+                if not code:
+                    exceptions.append(ExtractException(
+                        code="E_OLE_PARSE_FAILED",
+                        severity="warn",
+                        sheet=None,
+                        detail=f"VBA module '{name}' skipped: empty code.",
+                    ))
+                    continue
+
                 sha = hashlib.sha256(
                     code.encode("utf-8", errors="replace")
                 ).hexdigest()
                 modules.append(VbaModule(
                     name=name,
-                    type=_classify(name, code),
+                    type=_classify_by_metadata(vp, name, code),
                     source=code,
                     sha256=sha,
                     line_count=code.count("\n") + 1,
@@ -86,18 +137,13 @@ def extract_vba(path: Path) -> tuple[list[VbaModule], list[ExtractException]]:
         if vp is not None:
             vp.close()
 
-    # Fix 2: If VBA was detected but no modules extracted, record an exception
-    if vp is not None:
-        try:
-            has_macros = vp.detect_vba_macros()
-        except Exception:
-            has_macros = False
-        if has_macros and not modules and not exceptions:
-            exceptions.append(ExtractException(
-                code="E_OLE_PARSE_FAILED",
-                severity="warn",
-                sheet=None,
-                detail="VBA project detected but no modules could be extracted.",
-            ))
+    # If VBA was detected but no modules extracted, record an exception
+    if not modules and not exceptions:
+        exceptions.append(ExtractException(
+            code="E_OLE_PARSE_FAILED",
+            severity="warn",
+            sheet=None,
+            detail="VBA project detected but no modules could be extracted.",
+        ))
 
     return modules, exceptions
