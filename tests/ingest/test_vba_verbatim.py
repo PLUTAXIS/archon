@@ -29,10 +29,16 @@ def test_vba_sha256_is_stable():
 
     assert len(modules1) > 0, "No VBA modules found in fixture"
 
-    for m1, m2 in zip(modules1, modules2):
-        assert m1.sha256 == m2.sha256, \
-            f"SHA256 changed between runs for module {m1.name}"
+    # Compare counts first — zip would silently pass on mismatched lists
+    assert len(modules1) == len(modules2), \
+        f"Module count changed between runs: {len(modules1)} vs {len(modules2)}"
 
+    # Compare complete name-to-hash mappings
+    map1 = {m.name: m.sha256 for m in modules1}
+    map2 = {m.name: m.sha256 for m in modules2}
+
+    assert map1 == map2, \
+        f"SHA256 mappings differ between runs: {map1} vs {map2}"
 
 def test_vba_sha256_matches_source():
     """SHA256 stored on each module must match its source."""
