@@ -1,0 +1,2644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARCHON — Neuro-Symbolic Audit Engine</title>
+  <meta name="description" content="ARCHON decompiles Excel, VBA, and Access models that run critical financial workflows, maps every dependency, and delivers audit-ready documentation plus cryptographically-verified Python migrations." />
+  <meta property="og:title" content="ARCHON — Neuro-Symbolic Audit Engine" />
+  <meta property="og:description" content="Somebody built this. Nobody remembers how. Decompile Excel, VBA, and Access financial models into audit-ready documentation and cryptographically-verified Python." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0A0A0A;
+      --surface: #111111;
+      --text-primary: #F5F5F5;
+      --text-secondary: #8A8A8A;
+      --border: rgba(255, 255, 255, 0.10);
+      --border-strong: rgba(255, 255, 255, 0.20);
+      --accent: #C6FF00;
+      --accent-hover: #D4FF33;
+
+      --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      --container: 1360px;
+      --page-gutter: clamp(24px, 6.66vw, 96px);
+      --nav-height: 76px;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --t-micro: 160ms;
+      --t-ui: 380ms;
+      --t-panel: 440ms;
+      --t-reveal: 700ms;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background-color: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) var(--bg);
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--accent);
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-primary);
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    ::selection {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    ::-moz-selection {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button, input, select {
+      font-family: var(--font-sans);
+      color: inherit;
+    }
+
+    :focus-visible {
+      outline: 1.5px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    /* Container — ~96px Page Margins on 1440px Desktop */
+    .container {
+      width: 100%;
+      max-width: var(--container);
+      margin-inline: auto;
+      padding-inline: var(--page-gutter);
+    }
+
+    .section-rule {
+      border-top: 1px solid var(--border);
+    }
+
+    .anchor-offset {
+      scroll-margin-top: calc(var(--nav-height) + 20px);
+    }
+
+    /* Buttons — Pill CTAs Only (border-radius: 999px) */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 13px 28px;
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      line-height: 1;
+      white-space: nowrap;
+      border-radius: 999px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background-color var(--t-ui) var(--ease-out),
+                  color var(--t-ui) var(--ease-out),
+                  border-color var(--t-ui) var(--ease-out),
+                  transform var(--t-micro) var(--ease-out);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn--primary {
+      background-color: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .btn--primary:hover {
+      background-color: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn--outline {
+      background-color: transparent;
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .btn--outline:hover {
+      background-color: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn--ghost {
+      background-color: transparent;
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+
+    .btn--ghost:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn--full {
+      width: 100%;
+    }
+
+    /* 1. Navigation */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      height: var(--nav-height);
+      background-color: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+    }
+
+    .brand-lockup {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .wordmark {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--text-primary);
+      white-space: nowrap;
+      transition: color var(--t-ui) var(--ease-out);
+    }
+
+    .wordmark:hover {
+      color: var(--accent);
+    }
+
+    .brand-credit {
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      margin-left: auto;
+    }
+
+    .nav-link {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      flex-shrink: 0;
+      position: relative;
+      padding-block: 4px;
+      transition: color var(--t-ui) var(--ease-out);
+    }
+
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 1px;
+      background-color: var(--accent);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform var(--t-ui) var(--ease-out);
+    }
+
+    .nav-link:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-link:hover::after {
+      transform: scaleX(1);
+    }
+
+    /* Top-Right Utility Toggle + Compact 2-Row Menu (Sharp Panel) */
+    .utility-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .utility-toggle {
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 2px;
+      color: var(--accent);
+      cursor: pointer;
+      transition: background-color var(--t-ui) var(--ease-out),
+                  color var(--t-ui) var(--ease-out),
+                  transform var(--t-micro) var(--ease-out);
+    }
+
+    .utility-toggle:hover,
+    .utility-toggle[aria-expanded="true"] {
+      background-color: var(--accent);
+      color: var(--bg);
+    }
+
+    .utility-toggle:active {
+      transform: translateY(1px);
+    }
+
+    .utility-glyph {
+      width: 18px;
+      height: 14px;
+      display: block;
+    }
+
+    .utility-glyph line {
+      transition: transform 280ms cubic-bezier(0.4, 0, 1, 1);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .utility-toggle[aria-expanded="true"] .utility-glyph line {
+      transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .utility-toggle[aria-expanded="true"] .glyph-bar-top {
+      transform: translateY(2.5px) rotate(45deg);
+    }
+
+    .utility-toggle[aria-expanded="true"] .glyph-bar-bottom {
+      transform: translateY(-2.5px) rotate(-45deg);
+    }
+
+    .utility-panel {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: 236px;
+      display: grid;
+      grid-template-rows: 0fr;
+      background-color: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 2px;
+      z-index: 80;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform-origin: top right;
+      transform: translateY(-6px) scaleY(0.94);
+      transition: grid-template-rows 280ms cubic-bezier(0.4, 0, 1, 1),
+                  opacity 260ms cubic-bezier(0.4, 0, 1, 1),
+                  transform 280ms cubic-bezier(0.4, 0, 1, 1),
+                  visibility 0ms linear 280ms;
+    }
+
+    .utility-panel.is-open {
+      grid-template-rows: 1fr;
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(0) scaleY(1);
+      transition: grid-template-rows 400ms cubic-bezier(0.16, 1, 0.3, 1),
+                  opacity 380ms cubic-bezier(0.16, 1, 0.3, 1),
+                  transform 400ms cubic-bezier(0.16, 1, 0.3, 1),
+                  visibility 0ms linear 0ms;
+    }
+
+    .utility-panel-inner {
+      overflow: hidden;
+    }
+
+    .utility-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 15px 18px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background-color var(--t-ui) var(--ease-out),
+                  color var(--t-ui) var(--ease-out);
+    }
+
+    .utility-item:last-child {
+      border-bottom: none;
+    }
+
+    .utility-item:hover,
+    .utility-item:focus-visible {
+      background-color: var(--bg);
+    }
+
+    .utility-item--xray {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .utility-item--about {
+      color: var(--text-primary);
+      font-weight: 400;
+    }
+
+    .utility-item--about:hover {
+      color: var(--accent);
+    }
+
+    /* 2. Hero — Audi-Scale Typography + Live Before/After Working Demo Window */
+    .hero {
+      padding-block: 120px 136px;
+    }
+
+    .hero-top {
+      max-width: 920px;
+      margin-bottom: 72px;
+    }
+
+    .hero-eyebrow {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      color: var(--text-secondary);
+      margin-bottom: 28px;
+    }
+
+    .hero-headline {
+      font-family: var(--font-display);
+      font-size: clamp(3.15rem, 6vw, 5.4rem);
+      font-weight: 700;
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      text-wrap: balance;
+      max-width: 14ch;
+      margin-bottom: 28px;
+    }
+
+    .hero-subhead {
+      font-size: 1rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-width: 60ch;
+      margin-bottom: 40px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* Real Before/After App Demo Window (Sharp 2px Chrome) */
+    .demo-window {
+      border: 1px solid var(--border-strong);
+      border-radius: 2px;
+      background-color: var(--bg);
+    }
+
+    .demo-chrome {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 13px 20px;
+      background-color: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .demo-chrome-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .window-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+    }
+
+    .window-dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+    }
+
+    .demo-filename {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .demo-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .demo-tab {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 2px;
+      padding: 5px 10px;
+      font-size: 0.74rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: color var(--t-ui) var(--ease-out),
+                  border-color var(--t-ui) var(--ease-out),
+                  background-color var(--t-ui) var(--ease-out);
+    }
+
+    .demo-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .demo-tab.is-active {
+      color: var(--accent);
+      border-color: var(--border-strong);
+      background-color: var(--bg);
+    }
+
+    .demo-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      min-height: 292px;
+    }
+
+    .demo-pane {
+      padding: 32px 32px 34px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .demo-pane--before {
+      border-right: 1px solid var(--border);
+      background-color: var(--bg);
+    }
+
+    .demo-pane--after {
+      background-color: var(--surface);
+    }
+
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pane-header-right {
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+      text-transform: none;
+    }
+
+    .source-code {
+      font-family: var(--font-code);
+      font-size: 0.9rem;
+      line-height: 1.75;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-bottom: auto;
+    }
+
+    .source-meta {
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .spec-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 118px;
+      margin-bottom: auto;
+    }
+
+    .spec-line {
+      font-family: var(--font-sans);
+      font-size: 1.02rem;
+      line-height: 1.55;
+      color: var(--text-primary);
+      min-height: 1.55em;
+    }
+
+    @keyframes caret-blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    .typing-caret {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      margin-left: 3px;
+      background-color: var(--accent);
+      vertical-align: -0.14em;
+      animation: caret-blink 900ms step-end infinite;
+    }
+
+    .demo-anomaly {
+      padding: 12px 14px;
+      border: 1px solid var(--accent);
+      border-radius: 2px;
+      background-color: var(--bg);
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1.45;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+
+    .demo-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 20px;
+      background-color: var(--surface);
+      border-top: 1px solid var(--border);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .demo-footer-status {
+      color: var(--text-secondary);
+    }
+
+    /* 3. Stat Strip — Clean Standalone Inter Tabular Numerals */
+    .stat-strip {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .stat-cell {
+      padding: 60px 32px;
+      border-right: 1px solid var(--border);
+      background-color: var(--bg);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .stat-cell:first-child {
+      padding-left: 0;
+    }
+
+    .stat-cell:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .stat-value {
+      font-family: var(--font-sans);
+      font-size: clamp(1.75rem, 2.4vw, 2.35rem);
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      line-height: 1.1;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .stat-desc {
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: var(--text-primary);
+    }
+
+    .stat-source {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    /* Section Rhythm — Audi 144px Desktop Padding */
+    .section-block {
+      padding-block: 148px;
+    }
+
+    .section-header {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 40px;
+      align-items: baseline;
+      margin-bottom: 72px;
+    }
+
+    .section-kicker {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--text-secondary);
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 3.2vw, 3rem);
+      font-weight: 700;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      text-wrap: balance;
+      max-width: 24ch;
+    }
+
+    /* 5. How It Works — 4 Real Product Artifacts (2x2 Architectural Grid) */
+    .stages-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+      border-left: 1px solid var(--border);
+    }
+
+    .stage-card {
+      padding: 44px 40px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background-color: var(--bg);
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .stage-head {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .stage-label {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stage-num {
+      color: var(--accent);
+      margin-right: 10px;
+      font-weight: 600;
+    }
+
+    .stage-copy {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      max-width: 48ch;
+    }
+
+    /* Sharp Artifact Container inside Each Stage */
+    .artifact-box {
+      margin-top: auto;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background-color: var(--surface);
+    }
+
+    .artifact-bar {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .artifact-bar strong {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .artifact-pre {
+      padding: 16px 14px;
+      font-family: var(--font-code);
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: var(--text-primary);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .artifact-muted {
+      color: var(--text-secondary);
+    }
+
+    .artifact-accent {
+      color: var(--accent);
+    }
+
+    .artifact-prose {
+      padding: 16px 14px;
+      font-size: 0.85rem;
+      line-height: 1.65;
+      color: var(--text-primary);
+    }
+
+    .artifact-prose-meta {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 0.74rem;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 6. Positioning */
+    .positioning-grid {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 40px;
+      align-items: start;
+    }
+
+    .positioning-body {
+      max-width: 780px;
+    }
+
+    .positioning-statement {
+      font-family: var(--font-display);
+      font-size: clamp(1.65rem, 2.7vw, 2.4rem);
+      font-weight: 600;
+      line-height: 1.24;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      text-wrap: balance;
+      margin-bottom: 24px;
+    }
+
+    .positioning-statement em {
+      font-style: normal;
+      color: var(--accent);
+    }
+
+    .positioning-detail {
+      font-size: 0.975rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-width: 58ch;
+      margin-bottom: 56px;
+    }
+
+    .contrast-ledger {
+      border-top: 1px solid var(--border);
+    }
+
+    .contrast-row {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr) 150px;
+      gap: 24px;
+      align-items: baseline;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .contrast-category {
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+    }
+
+    .contrast-row--archon .contrast-category {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .contrast-limit {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .contrast-row--archon .contrast-limit {
+      color: var(--text-primary);
+    }
+
+    .contrast-verdict {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-align: right;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .contrast-row--archon .contrast-verdict {
+      color: var(--accent);
+    }
+
+    /* 7. Engagement Tiers — Sharp Content Panels + Pill CTAs */
+    .tiers-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--border);
+    }
+
+    .tier-col {
+      padding: 48px 36px 40px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg);
+      transition: background-color var(--t-ui) var(--ease-out);
+    }
+
+    .tier-col:last-child {
+      border-right: none;
+    }
+
+    .tier-col:hover,
+    .tier-col:focus-within {
+      background-color: var(--surface);
+    }
+
+    .tier-turnaround {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 24px;
+    }
+
+    .tier-title {
+      font-family: var(--font-display);
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+
+    .tier-summary {
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      min-height: 3em;
+    }
+
+    .tier-list {
+      list-style: none;
+      border-top: 1px solid var(--border);
+      padding-top: 28px;
+      margin-bottom: 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .tier-list li {
+      position: relative;
+      padding-left: 18px;
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: var(--text-primary);
+    }
+
+    .tier-list li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--text-secondary);
+    }
+
+    /* 8. Trust / Compliance Strip */
+    .compliance-strip {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding-block: 40px;
+    }
+
+    .compliance-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px 32px;
+    }
+
+    .compliance-lead {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--text-secondary);
+    }
+
+    .compliance-list {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 24px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .compliance-sep {
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    /* 9. Final CTA Band */
+    .final-cta {
+      padding-block: 156px;
+    }
+
+    .final-cta-inner {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      gap: 64px;
+      align-items: end;
+    }
+
+    .final-cta-kicker {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .final-cta-headline {
+      font-family: var(--font-display);
+      font-size: clamp(2.35rem, 4.2vw, 3.85rem);
+      font-weight: 700;
+      line-height: 1.04;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      text-wrap: balance;
+      max-width: 14ch;
+    }
+
+    .cta-form-wrap {
+      width: 100%;
+    }
+
+    .cta-form-note {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: var(--text-secondary);
+      margin-bottom: 22px;
+      max-width: 44ch;
+    }
+
+    .inline-form {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .text-input,
+    .select-input {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 16px;
+      background-color: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 2px;
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      transition: border-color var(--t-ui) var(--ease-out);
+    }
+
+    .text-input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .text-input:focus,
+    .select-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .form-feedback {
+      margin-top: 14px;
+      min-height: 20px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .form-feedback.is-error {
+      color: var(--text-primary);
+    }
+
+    .form-feedback.is-success {
+      color: var(--accent);
+    }
+
+    /* 10. Footer */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      padding-block: 44px;
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px 32px;
+    }
+
+    .footer-left {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 12px 28px;
+    }
+
+    .footer-copy {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .footer-legal {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Modals & About Manifest Drawer (Sharp Panels, Zero Blur) */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background-color: rgba(10, 10, 10, 0.86);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity var(--t-panel) var(--ease-out),
+                  visibility var(--t-panel) var(--ease-out);
+    }
+
+    .modal-backdrop.is-open {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .modal-dialog {
+      width: 100%;
+      max-width: 500px;
+      background-color: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 2px;
+      transform: translateY(12px);
+      transition: transform var(--t-panel) var(--ease-out);
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+    }
+
+    .modal-backdrop.is-open .modal-dialog {
+      transform: translateY(0);
+    }
+
+    .modal-backdrop--drawer {
+      justify-content: flex-end;
+      align-items: stretch;
+      padding: 0;
+    }
+
+    .modal-dialog--drawer {
+      max-width: 440px;
+      height: 100%;
+      max-height: 100vh;
+      border-radius: 0;
+      border: none;
+      border-left: 1px solid var(--border-strong);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(32px);
+    }
+
+    .modal-backdrop--drawer.is-open .modal-dialog--drawer {
+      transform: translateX(0);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 28px 28px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-kicker {
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .modal-title {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      color: var(--text-primary);
+      margin-top: 8px;
+    }
+
+    .modal-close {
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: 2px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: border-color var(--t-ui) var(--ease-out),
+                  color var(--t-ui) var(--ease-out),
+                  transform var(--t-micro) var(--ease-out);
+    }
+
+    .modal-close:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .modal-close:active {
+      transform: translateY(1px);
+    }
+
+    .modal-body {
+      padding: 28px;
+      flex: 1;
+    }
+
+    .manifest-list {
+      border-top: 1px solid var(--border);
+    }
+
+    .manifest-row {
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92rem;
+      line-height: 1.65;
+      color: var(--text-secondary);
+    }
+
+    .manifest-label {
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-right: 4px;
+    }
+
+    .manifest-val {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text-primary);
+    }
+
+    .manifest-val--accent {
+      color: var(--accent);
+    }
+
+    .manifest-primary {
+      color: var(--text-primary);
+    }
+
+    .field-group {
+      margin-bottom: 20px;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      background-color: var(--bg);
+      margin-bottom: 24px;
+      cursor: pointer;
+    }
+
+    .checkbox-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .checkbox-text {
+      font-size: 0.84rem;
+      line-height: 1.55;
+      color: var(--text-secondary);
+    }
+
+    .checkbox-text strong {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .modal-receipt {
+      display: none;
+    }
+
+    .modal-receipt.is-visible {
+      display: block;
+    }
+
+    .receipt-box {
+      border: 1px solid var(--border);
+      background-color: var(--bg);
+      padding: 22px;
+      margin-bottom: 24px;
+    }
+
+    .receipt-id {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .receipt-copy {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: var(--text-primary);
+      margin-bottom: 14px;
+    }
+
+    .receipt-scrubber {
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Simple Scroll Fade Reveal (700ms) */
+    .reveal {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity var(--t-reveal) var(--ease-out),
+                  transform var(--t-reveal) var(--ease-out);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Responsive Breakpoints */
+    @media (max-width: 1080px) {
+      .hero {
+        padding-block: 88px 100px;
+      }
+
+      .demo-split {
+        grid-template-columns: 1fr;
+        min-height: 0;
+      }
+
+      .demo-pane--before {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stat-cell {
+        padding: 40px 28px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .stat-cell:nth-child(odd) {
+        padding-left: 0;
+      }
+
+      .stat-cell:nth-child(even) {
+        border-right: none;
+        padding-right: 0;
+      }
+
+      .stat-cell:nth-last-child(-n+2) {
+        border-bottom: none;
+      }
+
+      .section-block {
+        padding-block: 112px;
+      }
+
+      .section-header,
+      .positioning-grid {
+        grid-template-columns: 1fr;
+        gap: 18px;
+      }
+
+      .stages-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tiers-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tier-col {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .tier-col:last-child {
+        border-bottom: none;
+      }
+
+      .tier-summary {
+        min-height: 0;
+      }
+
+      .final-cta {
+        padding-block: 112px;
+      }
+
+      .final-cta-inner {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      :root {
+        --nav-height: 64px;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        padding-block: 64px 76px;
+      }
+
+      .hero-top {
+        margin-bottom: 48px;
+      }
+
+      .hero-headline {
+        font-size: clamp(2.4rem, 10vw, 3.4rem);
+      }
+
+      .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .demo-chrome {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .demo-pane {
+        padding: 24px 20px;
+      }
+
+      .stat-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-cell,
+      .stat-cell:first-child,
+      .stat-cell:last-child {
+        padding: 36px 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .stat-cell:last-child {
+        border-bottom: none;
+      }
+
+      .section-block {
+        padding-block: 88px;
+      }
+
+      .section-header {
+        margin-bottom: 48px;
+      }
+
+      .stage-card {
+        padding: 32px 22px;
+      }
+
+      .contrast-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .contrast-verdict {
+        text-align: left;
+      }
+
+      .tier-col {
+        padding: 36px 24px;
+      }
+
+      .inline-form {
+        flex-direction: column;
+      }
+
+      .final-cta {
+        padding-block: 88px;
+      }
+
+      .modal-header,
+      .modal-body {
+        padding-inline: 22px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+
+      .typing-caret {
+        animation: none;
+      }
+
+      .btn,
+      .nav-link,
+      .nav-link::after,
+      .utility-toggle,
+      .utility-glyph line,
+      .utility-panel,
+      .modal-backdrop,
+      .modal-dialog {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 1. Navigation -->
+  <header class="site-header">
+    <div class="container nav-inner">
+      <div class="brand-lockup">
+        <a href="#top" class="wordmark" aria-label="ARCHON Home">ARCHON</a>
+        <span class="brand-credit">by God_Axis</span>
+      </div>
+
+      <nav class="nav-links" aria-label="Primary Navigation">
+        <a href="#product" class="nav-link">Product</a>
+        <a href="#how-it-works" class="nav-link">How It Works</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+      </nav>
+
+      <!-- Top-Right Utility Toggle -->
+      <div class="utility-wrap" id="utilityWrap">
+        <button
+          type="button"
+          class="utility-toggle"
+          id="utilityToggle"
+          aria-expanded="false"
+          aria-haspopup="menu"
+          aria-controls="utilityPanel"
+          aria-label="Open ARCHON menu"
+        >
+          <svg class="utility-glyph" viewBox="0 0 18 14" fill="none" aria-hidden="true">
+            <path d="M3.5 1.5H1.5V12.5H3.5" stroke="currentColor" stroke-width="1.2" />
+            <path d="M14.5 1.5H16.5V12.5H14.5" stroke="currentColor" stroke-width="1.2" />
+            <line class="glyph-bar-top" x1="5.5" y1="4.5" x2="12.5" y2="4.5" stroke="currentColor" stroke-width="1.4" />
+            <line class="glyph-bar-bottom" x1="5.5" y1="9.5" x2="12.5" y2="9.5" stroke="currentColor" stroke-width="1.4" />
+          </svg>
+        </button>
+
+        <div class="utility-panel" id="utilityPanel" role="menu" aria-labelledby="utilityToggle" aria-hidden="true">
+          <div class="utility-panel-inner">
+            <button
+              type="button"
+              class="utility-item utility-item--xray"
+              role="menuitem"
+              data-open-modal="X-Ray (48 Hours)"
+            >
+              <span>Request an X-Ray</span>
+            </button>
+            <button
+              type="button"
+              class="utility-item utility-item--about"
+              role="menuitem"
+              id="utilityAboutBtn"
+            >
+              <span>About Us</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- 2. Hero + Live Working Before/After Demo Window -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="container">
+        <div class="hero-top">
+          <p class="hero-eyebrow">NEURO-SYMBOLIC AUDIT ENGINE</p>
+          <h1 id="hero-heading" class="hero-headline">Somebody built this. Nobody remembers how.</h1>
+          <p class="hero-subhead">
+            ARCHON decompiles Excel, VBA, and Access models that run critical financial workflows, maps every dependency, and delivers audit-ready documentation plus a cryptographically-verified Python migration — in days, not quarters.
+          </p>
+          <div class="hero-actions">
+            <button type="button" class="btn btn--primary" data-open-modal="X-Ray (48 Hours)">Request a Free 48-Hour X-Ray</button>
+            <a href="#how-it-works" class="btn btn--ghost">See How It Works</a>
+          </div>
+        </div>
+
+        <!-- Working Before / After Decompiler Demo Panel -->
+        <div class="demo-window" aria-label="Live ARCHON before and after decompilation demo">
+          <div class="demo-chrome">
+            <div class="demo-chrome-left">
+              <div class="window-dots" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span class="demo-filename" id="demoFilename">PricingModel_v14_FINAL.xlsm — ARCHON</span>
+            </div>
+
+            <div class="demo-tabs" role="tablist" aria-label="Audit examples">
+              <button type="button" class="demo-tab is-active" role="tab" aria-selected="true" data-demo-idx="0">01 Excel Formula</button>
+              <button type="button" class="demo-tab" role="tab" aria-selected="false" data-demo-idx="1">02 VBA Macro</button>
+              <button type="button" class="demo-tab" role="tab" aria-selected="false" data-demo-idx="2">03 Access SQL</button>
+            </div>
+          </div>
+
+          <div class="demo-split">
+            <div class="demo-pane demo-pane--before">
+              <div class="pane-header">
+                <span>SOURCE</span>
+                <span class="pane-header-right" id="demoSourceRef">Sheet1!C4312</span>
+              </div>
+              <pre class="source-code" id="demoSourceCode">=IF(ISERROR(VLOOKUP(A2,Sheet3!$A$1:$D$500,4,0)),0,VLOOKUP(A2,Sheet3!$A$1:$D$500,4,0))*IF(B2&gt;1000,0.92,1)</pre>
+              <div class="source-meta" id="demoSourceMeta">Excel OpenXML · 10,000-row dragged vector · no named ranges</div>
+            </div>
+
+            <div class="demo-pane demo-pane--after" aria-live="polite">
+              <div class="pane-header">
+                <span>// INTERPRETATION / PLAIN ENGLISH</span>
+                <span class="pane-header-right" id="demoSpecScope">SOX 404 / SR 26-2</span>
+              </div>
+              <div class="spec-lines" id="demoSpecLines">
+                <p class="spec-line"></p>
+                <p class="spec-line"></p>
+                <p class="spec-line"></p>
+              </div>
+              <div class="demo-anomaly" id="demoAnomaly">ANOMALY DETECTED — hardcoded discount rate, not a named range.</div>
+            </div>
+          </div>
+
+          <div class="demo-footer">
+            <span id="demoModelIndex">MODEL 01/03</span>
+            <span class="demo-footer-status">PARITY PENDING</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Stat Strip -->
+    <section class="stat-strip reveal" aria-label="Empirical spreadsheet risk benchmarks">
+      <div class="container">
+        <div class="stat-grid">
+          <div class="stat-cell">
+            <div class="stat-value" data-stat="range">90–94%</div>
+            <div>
+              <p class="stat-desc">of enterprise spreadsheets contain material errors</p>
+              <p class="stat-source">EuSpRIG / Mitratech audits</p>
+            </div>
+          </div>
+
+          <div class="stat-cell">
+            <div class="stat-value" data-stat="market">$41.4B → $87.2B</div>
+            <div>
+              <p class="stat-desc">risk management software market by 2032</p>
+              <p class="stat-source">Data Bridge Research</p>
+            </div>
+          </div>
+
+          <div class="stat-cell">
+            <div class="stat-value" data-stat="loss">$6.2B</div>
+            <div>
+              <p class="stat-desc">lost to a single spreadsheet formula error</p>
+              <p class="stat-source">2012 VaR trading incident</p>
+            </div>
+          </div>
+
+          <div class="stat-cell">
+            <div class="stat-value" data-stat="epsilon">ε ≤ 10⁻⁹</div>
+            <div>
+              <p class="stat-desc">mathematical parity tolerance on every migration</p>
+              <p class="stat-source">Differential output verification</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. How It Works — 4 Real Product Artifacts -->
+    <section id="how-it-works" class="section-block anchor-offset reveal" aria-labelledby="how-heading">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-kicker">HOW IT WORKS</span>
+          <h2 id="how-heading" class="section-title">Four deterministic stages from opaque workbook to verified code.</h2>
+        </div>
+
+        <div class="stages-grid">
+          <!-- Stage 01: Decompiled File Fragment -->
+          <article class="stage-card">
+            <div class="stage-head">
+              <h3 class="stage-label"><span class="stage-num">01</span>DECOMPILE</h3>
+              <p class="stage-copy">Unpacks Excel, VBA, and Access structure without Microsoft Office installed.</p>
+            </div>
+            <div class="artifact-box" aria-label="Decompiled workbook structure artifact">
+              <div class="artifact-bar">
+                <span>PricingModel_v14.xlsm</span>
+                <span>UNPACKED AST</span>
+              </div>
+              <pre class="artifact-pre">xl/worksheets/sheet3.xml    <span class="artifact-muted">48,210 cells</span>
+xl/vbaProject.bin           <span class="artifact-muted">11 modules · 4,820 LOC</span>
+xl/externalLinks/link1.xml  <span class="artifact-accent">\\corp-fs04\rates.xlsx (stale)</span>
+xl/definedNames             <span class="artifact-muted">19 ranges (4 broken)</span></pre>
+            </div>
+          </article>
+
+          <!-- Stage 02: Real-Labeled Lineage Map -->
+          <article class="stage-card">
+            <div class="stage-head">
+              <h3 class="stage-label"><span class="stage-num">02</span>MAP</h3>
+              <p class="stage-copy">Compresses hundreds of thousands of cells into one cross-workbook dependency graph.</p>
+            </div>
+            <div class="artifact-box" aria-label="Cross-workbook lineage artifact">
+              <div class="artifact-bar">
+                <span>LINEAGE GRAPH</span>
+                <span>48,210 CELLS → 192 NODES</span>
+              </div>
+              <pre class="artifact-pre">Claims.accdb [tbl_claims_prod]
+  └─ Sheet3!A1:D500 <span class="artifact-muted">(rate lookup table)</span>
+       └─ Sheet1!C4312 <span class="artifact-accent">(override: 0.92)</span>
+            └─ modVaR::RunCalc → Close!F42 <span class="artifact-muted">[SOX 404]</span></pre>
+            </div>
+          </article>
+
+          <!-- Stage 03: Real Audit-Copy Excerpt -->
+          <article class="stage-card">
+            <div class="stage-head">
+              <h3 class="stage-label"><span class="stage-num">03</span>EXPLAIN</h3>
+              <p class="stage-copy">Produces plain-English audit documentation and a 0–100 score against SOX 404, SR 26-2, and DORA.</p>
+            </div>
+            <div class="artifact-box" aria-label="Audit documentation excerpt">
+              <div class="artifact-bar">
+                <span>BRD EXCERPT · SEC 4.2</span>
+                <strong>RISK SCORE: 78 / 100</strong>
+              </div>
+              <div class="artifact-prose">
+                Sheet1!C4312 applies a manual 8% discount (0.92) to balances above 1,000 without referencing a governed rate table. Error states silently default to zero.
+                <div class="artifact-prose-meta">CONTROL GAP: SOX 404 IPE · FED SR 26-2 CONCEPTUAL SOUNDNESS</div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Stage 04: Real Before/After Python Diff -->
+          <article class="stage-card">
+            <div class="stage-head">
+              <h3 class="stage-label"><span class="stage-num">04</span>VERIFY &amp; MIGRATE</h3>
+              <p class="stage-copy">Transpiles the model into tested Python and issues a cryptographic output-parity certificate.</p>
+            </div>
+            <div class="artifact-box" aria-label="Python migration diff artifact">
+              <div class="artifact-bar">
+                <span>pricing_engine.py</span>
+                <strong>PARITY ε ≤ 10⁻⁹</strong>
+              </div>
+              <pre class="artifact-pre"><span class="artifact-muted">- =IF(B2&gt;1000, VLOOKUP(...)*0.92, VLOOKUP(...))</span>
++ def price_tier(amount: Decimal, rate: Decimal) -&gt; Decimal:
++     return rate * TIER_DISCOUNT if amount &gt; 1000 else rate
+<span class="artifact-accent">VERIFIED · 12,400 historical vectors · max delta 0.0e+00</span></pre>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Positioning -->
+    <section id="product" class="section-block section-rule anchor-offset reveal" aria-labelledby="why-heading">
+      <div class="container">
+        <div class="positioning-grid">
+          <span class="section-kicker">POSITIONING</span>
+
+          <div class="positioning-body">
+            <h2 id="why-heading" class="positioning-statement">
+              Legacy EUC tools only inventory risk. Excel-to-API wrappers only wrap it. <em>ARCHON explains and replaces the model</em> — with mathematically proven equivalence.
+            </h2>
+            <p class="positioning-detail">
+              ARCHON parses the full abstract syntax tree deterministically, exposes every hidden override, and proves cell-by-cell numerical parity before a production workflow cuts over.
+            </p>
+
+            <div class="contrast-ledger" role="table" aria-label="Approach comparison">
+              <div class="contrast-row" role="row">
+                <div class="contrast-category" role="cell">EUC INVENTORY TOOLS</div>
+                <div class="contrast-limit" role="cell">Log edits and lock files while leaving broken macros intact.</div>
+                <div class="contrast-verdict" role="cell">MONITOR ONLY</div>
+              </div>
+              <div class="contrast-row" role="row">
+                <div class="contrast-category" role="cell">EXCEL-TO-API WRAPPERS</div>
+                <div class="contrast-limit" role="cell">Expose clean sheets as endpoints while preserving Excel lock-in.</div>
+                <div class="contrast-verdict" role="cell">WRAP ONLY</div>
+              </div>
+              <div class="contrast-row contrast-row--archon" role="row">
+                <div class="contrast-category" role="cell">ARCHON ENGINE</div>
+                <div class="contrast-limit" role="cell">Decompiles Excel, VBA, and Access into audit specs and verified Python.</div>
+                <div class="contrast-verdict" role="cell">EXPLAIN + REPLACE</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Engagement Tiers -->
+    <section id="pricing" class="section-block section-rule anchor-offset reveal" aria-labelledby="tiers-heading">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-kicker">ENGAGEMENTS</span>
+          <h2 id="tiers-heading" class="section-title">Scoped by turnaround, verified by math.</h2>
+        </div>
+
+        <div class="tiers-grid">
+          <article class="tier-col">
+            <span class="tier-turnaround">48 HOURS</span>
+            <h3 class="tier-title">X-RAY</h3>
+            <p class="tier-summary">Free 48-hour diagnostic on your worst workbook.</p>
+            <ul class="tier-list">
+              <li>Zero-PII local scrubber script so raw data stays on your network</li>
+              <li>Interactive cross-workbook and VBA dependency map</li>
+              <li>Silent hardcode override and broken macro detection</li>
+              <li>Live engineering walkthrough of every critical finding</li>
+            </ul>
+            <button type="button" class="btn btn--outline btn--full" data-open-modal="X-Ray (48 Hours)">Talk to us</button>
+          </article>
+
+          <article class="tier-col">
+            <span class="tier-turnaround">72 HOURS</span>
+            <h3 class="tier-title">ARCHAEOLOGY PACK</h3>
+            <p class="tier-summary">Full audit documentation and risk scorecard.</p>
+            <ul class="tier-list">
+              <li>Plain-English Business Requirements Document (BRD)</li>
+              <li>Complete formula, named-range, VBA, and Access data dictionary</li>
+              <li>Deterministic 0–100 score mapped to SOX 404, SR 26-2, and DORA</li>
+              <li>Prioritized defect ledger for internal and external auditors</li>
+            </ul>
+            <button type="button" class="btn btn--outline btn--full" data-open-modal="Archaeology Pack (72 Hours)">Talk to us</button>
+          </article>
+
+          <article class="tier-col">
+            <span class="tier-turnaround">3 WEEKS</span>
+            <h3 class="tier-title">MIGRATION SPRINT</h3>
+            <p class="tier-summary">Verified, production-ready application with parity certificate.</p>
+            <ul class="tier-list">
+              <li>Type-safe Python, SQL, and web application replacing the legacy model</li>
+              <li>Single-tenant containerized deployment inside your VPC</li>
+              <li>Differential verification against historical input vectors</li>
+              <li>Cryptographic output-parity certificate at ε ≤ 10⁻⁹ tolerance</li>
+            </ul>
+            <button type="button" class="btn btn--outline btn--full" data-open-modal="Migration Sprint (3 Weeks)">Talk to us</button>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Trust / Compliance Strip -->
+    <section class="compliance-strip reveal" aria-label="Regulatory frameworks supported">
+      <div class="container compliance-inner">
+        <span class="compliance-lead">AUDIT ALIGNMENT</span>
+        <div class="compliance-list" role="list">
+          <span role="listitem">SOX 404</span>
+          <span class="compliance-sep" aria-hidden="true">·</span>
+          <span role="listitem">SR 26-2</span>
+          <span class="compliance-sep" aria-hidden="true">·</span>
+          <span role="listitem">EU DORA</span>
+          <span class="compliance-sep" aria-hidden="true">·</span>
+          <span role="listitem">IFRS 17</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Final CTA Band -->
+    <section class="final-cta reveal" aria-labelledby="final-cta-heading">
+      <div class="container final-cta-inner">
+        <div>
+          <p class="final-cta-kicker">48-HOUR DIAGNOSTIC</p>
+          <h2 id="final-cta-heading" class="final-cta-headline">Find out what your spreadsheet isn't telling you.</h2>
+        </div>
+
+        <div class="cta-form-wrap">
+          <p class="cta-form-note">
+            Enter a work email to receive our local PII scrubber and schedule a 48-hour diagnostic on one critical model.
+          </p>
+          <form class="inline-form" id="inlineCtaForm" novalidate>
+            <label for="footerEmail" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">Work email</label>
+            <input
+              id="footerEmail"
+              name="email"
+              type="email"
+              class="text-input"
+              placeholder="name@institution.com"
+              autocomplete="email"
+              required
+            />
+            <button type="submit" class="btn btn--primary">Request a Free 48-Hour X-Ray</button>
+          </form>
+          <div class="form-feedback" id="inlineFormFeedback" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 10. Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-left">
+        <div class="brand-lockup">
+          <a href="#top" class="wordmark" aria-label="ARCHON Home">ARCHON</a>
+          <span class="brand-credit">by God_Axis</span>
+        </div>
+        <p class="footer-copy">Neuro-symbolic archaeology and verified migration for enterprise financial models.</p>
+      </div>
+      <p class="footer-legal">© 2026 God_Axis. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <!-- Shared Pre-Filled Intake Modal -->
+  <div class="modal-backdrop" id="intakeModal" role="dialog" aria-modal="true" aria-labelledby="modalHeading" aria-hidden="true">
+    <div class="modal-dialog" tabindex="-1">
+      <div class="modal-header">
+        <div>
+          <span class="modal-kicker" id="modalCellTag">48-HOUR DIAGNOSTIC</span>
+          <h2 id="modalHeading" class="modal-title">Request a Free 48-Hour X-Ray</h2>
+        </div>
+        <button type="button" class="modal-close" id="modalCloseBtn" aria-label="Close dialog">×</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="modalIntakeForm" novalidate>
+          <div class="field-group">
+            <label for="modalTier" class="field-label">ENGAGEMENT SCOPE</label>
+            <select id="modalTier" name="tier" class="select-input">
+              <option value="X-Ray (48 Hours)">X-Ray — 48 Hours (Free Diagnostic)</option>
+              <option value="Archaeology Pack (72 Hours)">Archaeology Pack — 72 Hours</option>
+              <option value="Migration Sprint (3 Weeks)">Migration Sprint — 3 Weeks</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label for="modalEmail" class="field-label">WORK EMAIL</label>
+            <input
+              id="modalEmail"
+              name="email"
+              type="email"
+              class="text-input"
+              placeholder="cro@institution.com"
+              autocomplete="email"
+              required
+            />
+          </div>
+
+          <div class="field-group">
+            <label for="modalFormat" class="field-label">PRIMARY MODEL FORMAT</label>
+            <select id="modalFormat" name="format" class="select-input">
+              <option value="Excel + VBA (.xlsm / .xlsb)">Excel + VBA Macros (.xlsm / .xlsb)</option>
+              <option value="Multi-Workbook Excel (.xlsx)">Multi-Workbook Excel (.xlsx)</option>
+              <option value="MS Access Database (.accdb / .mdb)">MS Access Database (.accdb / .mdb)</option>
+              <option value="Mixed Excel, VBA & Access">Mixed Excel, VBA &amp; Access Pipeline</option>
+            </select>
+          </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="modalScrubber" name="scrubber" checked />
+            <span class="checkbox-text">
+              <strong>Include local PII scrubber (scrubber.py).</strong> Masks strings and perturbs numeric inputs offline while preserving formulas and VBA AST.
+            </span>
+          </label>
+
+          <button type="submit" class="btn btn--primary btn--full">Submit Request</button>
+          <div class="form-feedback" id="modalFormFeedback" role="status" aria-live="polite"></div>
+        </form>
+
+        <div class="modal-receipt" id="modalReceipt">
+          <div class="receipt-box">
+            <div class="receipt-id" id="receiptTicketId">REF: ARC-2026-0000</div>
+            <p class="receipt-copy" id="receiptSummary"></p>
+            <p class="receipt-scrubber" id="receiptScrubberNote"></p>
+          </div>
+          <button type="button" class="btn btn--outline btn--full" id="modalDoneBtn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Us Manifest Slide-In Panel -->
+  <div class="modal-backdrop modal-backdrop--drawer" id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutHeading" aria-hidden="true">
+    <div class="modal-dialog modal-dialog--drawer" tabindex="-1">
+      <div class="modal-header">
+        <div>
+          <span class="modal-kicker">MANIFEST</span>
+          <h2 id="aboutHeading" class="modal-title">ABOUT</h2>
+        </div>
+        <button type="button" class="modal-close" id="aboutCloseBtn" aria-label="Close About panel">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="manifest-list">
+          <p class="manifest-row">
+            <span class="manifest-label">ORG:</span>
+            <span class="manifest-val manifest-val--accent">GOD_AXIS</span> — a 20+ member engineering collective.
+          </p>
+
+          <p class="manifest-row">
+            <span class="manifest-label">ACTIVE UNIT:</span>
+            <span class="manifest-val">LA_RESISTENCIA</span> — an 8-person squad from within God_Axis, built specifically to ship ARCHON.
+          </p>
+
+          <p class="manifest-row">
+            <span class="manifest-label">LEAD:</span>
+            <span class="manifest-val manifest-val--accent">WRIK</span>
+          </p>
+
+          <p class="manifest-row">
+            <span class="manifest-label">ORIGIN:</span>
+            <span class="manifest-primary">Meghnad Saha Institute of Technology &amp; UEM — 2nd-year students.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      /* =========================================================
+         1. LIVE WORKING BEFORE / AFTER DECOMPILER DEMO (9.5s LOOP)
+         ========================================================= */
+      const DEMO_CASES = [
+        {
+          filename: 'PricingModel_v14_FINAL.xlsm — ARCHON',
+          sourceRef: 'Sheet1!C4312',
+          sourceCode: '=IF(ISERROR(VLOOKUP(A2,Sheet3!$A$1:$D$500,4,0)),0,VLOOKUP(A2,Sheet3!$A$1:$D$500,4,0))*IF(B2>1000,0.92,1)',
+          sourceMeta: 'Excel OpenXML · 10,000-row dragged vector · no named ranges',
+          scope: 'SOX 404 / SR 26-2',
+          lines: [
+            'Looks up a rate from Sheet3.',
+            'Applies an 8% discount above 1,000.',
+            'No error handling beyond a blank fallback.'
+          ],
+          anomaly: 'ANOMALY DETECTED — hardcoded discount rate, not a named range.'
+        },
+        {
+          filename: 'VaR_Desk_2012_Rebuild.xlsm — ARCHON',
+          sourceRef: 'modVaR.bas · Line 184',
+          sourceCode: 'For i = 2 To LastRow\n  s1 = Cells(i, 4).Value\n  s2 = Cells(i, 5).Value\n  Cells(i, 6).Value = (s1 - s2) / (s1 + s2)\nNext i',
+          sourceMeta: 'VBA Module · 412 AST statements · direct sheet mutation',
+          scope: 'FED SR 26-2',
+          lines: [
+            'Loops across every position row in columns D and E.',
+            'Divides the spread by the sum of both values instead of their average.',
+            'Writes raw floats back to column F, erasing cell formula history.'
+          ],
+          anomaly: 'ANOMALY DETECTED — denominator divides by sum instead of average, halving volatility.'
+        },
+        {
+          filename: 'ClaimsReserve_Prod.accdb — ARCHON',
+          sourceRef: 'qry_ReserveClose · SQL',
+          sourceCode: 'SELECT p.PolicyID,\n  IIf(p.Tier="A", p.Base*1.145, p.Base) AS Reserve\nFROM tbl_Claims AS p\nWHERE p.CloseDate <= #12/31/2025#;',
+          sourceMeta: 'MS Access Query · 42,180 rows · feeds quarterly close workbook',
+          scope: 'IFRS 17 / EU DORA',
+          lines: [
+            'Extracts active policy rows from the local Access claims table.',
+            'Applies an undocumented 14.5% surcharge to Tier A policies.',
+            'Filters records against a static 2025 calendar cutoff.'
+          ],
+          anomaly: 'ANOMALY DETECTED — hardcoded fiscal cutoff date and unreferenced 1.145 multiplier.'
+        }
+      ];
+
+      const demoFilenameEl = document.getElementById('demoFilename');
+      const demoSourceRefEl = document.getElementById('demoSourceRef');
+      const demoSourceCodeEl = document.getElementById('demoSourceCode');
+      const demoSourceMetaEl = document.getElementById('demoSourceMeta');
+      const demoSpecScopeEl = document.getElementById('demoSpecScope');
+      const demoSpecLinesEl = document.getElementById('demoSpecLines');
+      const demoAnomalyEl = document.getElementById('demoAnomaly');
+      const demoModelIndexEl = document.getElementById('demoModelIndex');
+      const demoTabEls = Array.prototype.slice.call(document.querySelectorAll('[data-demo-idx]'));
+
+      let activeDemoIdx = 0;
+      let demoTimers = [];
+
+      function clearDemoTimers() {
+        demoTimers.forEach(clearTimeout);
+        demoTimers = [];
+      }
+
+      function setActiveTab(idx) {
+        demoTabEls.forEach(function (btn, i) {
+          const on = i === idx;
+          btn.classList.toggle('is-active', on);
+          btn.setAttribute('aria-selected', String(on));
+        });
+      }
+
+      function appendCaret(el) {
+        const caret = document.createElement('span');
+        caret.className = 'typing-caret';
+        caret.setAttribute('aria-hidden', 'true');
+        el.appendChild(caret);
+      }
+
+      function runDemoCase(idx) {
+        clearDemoTimers();
+        activeDemoIdx = idx;
+        setActiveTab(idx);
+
+        const item = DEMO_CASES[idx];
+        demoFilenameEl.textContent = item.filename;
+        demoSourceRefEl.textContent = item.sourceRef;
+        demoSourceCodeEl.textContent = item.sourceCode;
+        demoSourceMetaEl.textContent = item.sourceMeta;
+        demoSpecScopeEl.textContent = item.scope;
+        demoAnomalyEl.textContent = item.anomaly;
+        demoModelIndexEl.textContent = 'MODEL 0' + (idx + 1) + '/0' + DEMO_CASES.length;
+
+        const lineEls = Array.prototype.slice.call(demoSpecLinesEl.querySelectorAll('.spec-line'));
+        lineEls.forEach(function (p) { p.textContent = ''; });
+
+        if (reducedMotion) {
+          item.lines.forEach(function (text, i) {
+            if (lineEls[i]) lineEls[i].textContent = text;
+          });
+          return;
+        }
+
+        // Understated line-by-line typewriter reveal (~450-560ms per line, brief reading beat after source appears)
+        const targetLineMs = 520;
+        const linePauseMs = 360;
+        let elapsed = 440;
+
+        if (lineEls[0]) appendCaret(lineEls[0]);
+
+        item.lines.forEach(function (fullText, lineIdx) {
+          const p = lineEls[lineIdx];
+          if (!p) return;
+
+          const charMs = Math.max(8, Math.min(18, Math.round(targetLineMs / fullText.length)));
+          const isLastLine = lineIdx === item.lines.length - 1;
+
+          for (let c = 1; c <= fullText.length; c++) {
+            (function (charCount, delay) {
+              demoTimers.push(setTimeout(function () {
+                p.textContent = fullText.slice(0, charCount);
+                appendCaret(p);
+              }, delay));
+            })(c, elapsed);
+            elapsed += charMs;
+          }
+
+          if (!isLastLine) {
+            (function (delay) {
+              demoTimers.push(setTimeout(function () {
+                p.textContent = fullText;
+              }, delay));
+            })(elapsed + Math.round(linePauseMs * 0.7));
+          }
+
+          elapsed += linePauseMs;
+        });
+
+        // Hold calmly so the reader can absorb the completed explanation, then cycle
+        const cycleDuration = Math.max(8400, elapsed + 5200);
+        demoTimers.push(setTimeout(function () {
+          runDemoCase((activeDemoIdx + 1) % DEMO_CASES.length);
+        }, cycleDuration));
+      }
+
+      demoTabEls.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const idx = Number(btn.getAttribute('data-demo-idx'));
+          runDemoCase(idx);
+        });
+      });
+
+      runDemoCase(0);
+
+      /* =========================================================
+         2. SIMPLE SCROLL FADE REVEALS & STAT COUNT-UP
+         ========================================================= */
+      const revealEls = document.querySelectorAll('.reveal');
+
+      if (!reducedMotion && 'IntersectionObserver' in window) {
+        const revealObserver = new IntersectionObserver(function (entries, observer) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.14 });
+
+        revealEls.forEach(function (el) { revealObserver.observe(el); });
+      } else {
+        revealEls.forEach(function (el) { el.classList.add('is-visible'); });
+      }
+
+      function easeOutQuart(t) {
+        return 1 - Math.pow(1 - t, 4);
+      }
+
+      function animateStat(el) {
+        const type = el.getAttribute('data-stat');
+        const duration = 1300;
+        const start = performance.now();
+
+        function step(now) {
+          const progress = Math.min(1, (now - start) / duration);
+          const eased = easeOutQuart(progress);
+
+          if (type === 'range') {
+            el.textContent = Math.round(eased * 90) + '–' + Math.round(eased * 94) + '%';
+          } else if (type === 'market') {
+            el.textContent = '$' + (eased * 41.4).toFixed(1) + 'B → $' + (eased * 87.2).toFixed(1) + 'B';
+          } else if (type === 'loss') {
+            el.textContent = '$' + (eased * 6.2).toFixed(1) + 'B';
+          } else if (type === 'epsilon') {
+            const exp = Math.max(1, Math.round(eased * 9));
+            const sup = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+            el.textContent = 'ε ≤ 10⁻' + sup[exp];
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(step);
+          } else {
+            if (type === 'range') el.textContent = '90–94%';
+            if (type === 'market') el.textContent = '$41.4B → $87.2B';
+            if (type === 'loss') el.textContent = '$6.2B';
+            if (type === 'epsilon') el.textContent = 'ε ≤ 10⁻⁹';
+          }
+        }
+
+        requestAnimationFrame(step);
+      }
+
+      const statStrip = document.querySelector('.stat-strip');
+      const statValues = document.querySelectorAll('[data-stat]');
+      let statsDone = false;
+
+      if (!reducedMotion && statStrip && 'IntersectionObserver' in window) {
+        const statObserver = new IntersectionObserver(function (entries, observer) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting && !statsDone) {
+              statsDone = true;
+              statValues.forEach(animateStat);
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.25 });
+
+        statObserver.observe(statStrip);
+      }
+
+      /* =========================================================
+         3. TOP-RIGHT UTILITY TOGGLE (FOCUS-TRAPPED 2-ROW MENU)
+         ========================================================= */
+      const utilityWrap = document.getElementById('utilityWrap');
+      const utilityToggle = document.getElementById('utilityToggle');
+      const utilityPanel = document.getElementById('utilityPanel');
+      const utilityItems = Array.prototype.slice.call(utilityPanel.querySelectorAll('[role="menuitem"]'));
+      const utilityAboutBtn = document.getElementById('utilityAboutBtn');
+
+      function isUtilityOpen() {
+        return utilityPanel.classList.contains('is-open');
+      }
+
+      function openUtilityMenu() {
+        utilityPanel.classList.add('is-open');
+        utilityPanel.setAttribute('aria-hidden', 'false');
+        utilityToggle.setAttribute('aria-expanded', 'true');
+        setTimeout(function () {
+          if (utilityItems[0]) utilityItems[0].focus();
+        }, 40);
+      }
+
+      function closeUtilityMenu(restoreFocus) {
+        if (!isUtilityOpen()) return;
+        utilityPanel.classList.remove('is-open');
+        utilityPanel.setAttribute('aria-hidden', 'true');
+        utilityToggle.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) utilityToggle.focus();
+      }
+
+      utilityToggle.addEventListener('click', function () {
+        if (isUtilityOpen()) {
+          closeUtilityMenu(true);
+        } else {
+          openUtilityMenu();
+        }
+      });
+
+      document.addEventListener('mousedown', function (e) {
+        if (isUtilityOpen() && !utilityWrap.contains(e.target)) {
+          closeUtilityMenu(false);
+        }
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (!isUtilityOpen()) return;
+
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeUtilityMenu(true);
+          return;
+        }
+
+        if (e.key === 'Tab') {
+          const first = utilityItems[0];
+          const last = utilityItems[utilityItems.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const idx = utilityItems.indexOf(document.activeElement);
+          const next = e.key === 'ArrowDown'
+            ? (idx + 1) % utilityItems.length
+            : (idx - 1 + utilityItems.length) % utilityItems.length;
+          utilityItems[next].focus();
+        }
+      });
+
+      /* =========================================================
+         4. INTAKE MODAL & ABOUT US PANEL CONTROLLERS
+         ========================================================= */
+      function trapFocus(container, e) {
+        const nodes = container.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        const visible = Array.prototype.filter.call(nodes, function (el) {
+          return el.offsetParent !== null;
+        });
+        if (!visible.length) return;
+        const first = visible[0];
+        const last = visible[visible.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+
+      const modalBackdrop = document.getElementById('intakeModal');
+      const modalDialog = modalBackdrop.querySelector('.modal-dialog');
+      const modalCloseBtn = document.getElementById('modalCloseBtn');
+      const modalDoneBtn = document.getElementById('modalDoneBtn');
+      const modalHeading = document.getElementById('modalHeading');
+      const modalCellTag = document.getElementById('modalCellTag');
+      const modalTierSelect = document.getElementById('modalTier');
+      const modalEmailInput = document.getElementById('modalEmail');
+      const modalFormatSelect = document.getElementById('modalFormat');
+      const modalScrubberCheck = document.getElementById('modalScrubber');
+      const modalForm = document.getElementById('modalIntakeForm');
+      const modalFeedback = document.getElementById('modalFormFeedback');
+      const modalReceipt = document.getElementById('modalReceipt');
+      const receiptTicketId = document.getElementById('receiptTicketId');
+      const receiptSummary = document.getElementById('receiptSummary');
+      const receiptScrubberNote = document.getElementById('receiptScrubberNote');
+
+      const aboutBackdrop = document.getElementById('aboutModal');
+      const aboutDialog = aboutBackdrop.querySelector('.modal-dialog');
+      const aboutCloseBtn = document.getElementById('aboutCloseBtn');
+
+      let lastTriggerEl = null;
+
+      function isValidEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
+      }
+
+      function generateTicketId() {
+        return 'ARC-2026-' + Math.floor(1000 + Math.random() * 9000);
+      }
+
+      function syncModalTitle(tierValue) {
+        if (tierValue.indexOf('Archaeology') !== -1) {
+          modalHeading.textContent = 'Scope an Archaeology Pack';
+          modalCellTag.textContent = '72-HOUR AUDIT PACK';
+        } else if (tierValue.indexOf('Migration') !== -1) {
+          modalHeading.textContent = 'Scope a Migration Sprint';
+          modalCellTag.textContent = '3-WEEK MIGRATION';
+        } else {
+          modalHeading.textContent = 'Request a Free 48-Hour X-Ray';
+          modalCellTag.textContent = '48-HOUR DIAGNOSTIC';
+        }
+      }
+
+      function openIntakeModal(tierValue, triggerEl) {
+        closeUtilityMenu(false);
+        closeAboutModal(false);
+        lastTriggerEl = triggerEl || document.activeElement;
+
+        modalForm.style.display = 'block';
+        modalReceipt.classList.remove('is-visible');
+        modalFeedback.textContent = '';
+        modalFeedback.className = 'form-feedback';
+
+        if (tierValue) modalTierSelect.value = tierValue;
+        syncModalTitle(modalTierSelect.value);
+
+        modalBackdrop.classList.add('is-open');
+        modalBackdrop.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(function () { modalEmailInput.focus(); }, 60);
+      }
+
+      function closeIntakeModal(restoreFocus) {
+        if (!modalBackdrop.classList.contains('is-open')) return;
+        modalBackdrop.classList.remove('is-open');
+        modalBackdrop.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (restoreFocus !== false && lastTriggerEl && typeof lastTriggerEl.focus === 'function') {
+          lastTriggerEl.focus();
+        }
+      }
+
+      function openAboutModal(triggerEl) {
+        closeUtilityMenu(false);
+        closeIntakeModal(false);
+        lastTriggerEl = triggerEl || utilityToggle;
+
+        aboutBackdrop.classList.add('is-open');
+        aboutBackdrop.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+
+        setTimeout(function () { aboutCloseBtn.focus(); }, 60);
+      }
+
+      function closeAboutModal(restoreFocus) {
+        if (!aboutBackdrop.classList.contains('is-open')) return;
+        aboutBackdrop.classList.remove('is-open');
+        aboutBackdrop.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (restoreFocus !== false && lastTriggerEl && typeof lastTriggerEl.focus === 'function') {
+          lastTriggerEl.focus();
+        }
+      }
+
+      document.querySelectorAll('[data-open-modal]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const returnTarget = utilityPanel.contains(btn) ? utilityToggle : btn;
+          openIntakeModal(btn.getAttribute('data-open-modal'), returnTarget);
+        });
+      });
+
+      utilityAboutBtn.addEventListener('click', function () {
+        openAboutModal(utilityToggle);
+      });
+
+      modalTierSelect.addEventListener('change', function () {
+        syncModalTitle(modalTierSelect.value);
+      });
+
+      modalCloseBtn.addEventListener('click', function () { closeIntakeModal(true); });
+      modalDoneBtn.addEventListener('click', function () { closeIntakeModal(true); });
+      aboutCloseBtn.addEventListener('click', function () { closeAboutModal(true); });
+
+      modalBackdrop.addEventListener('click', function (e) {
+        if (e.target === modalBackdrop) closeIntakeModal(true);
+      });
+
+      aboutBackdrop.addEventListener('click', function (e) {
+        if (e.target === aboutBackdrop) closeAboutModal(true);
+      });
+
+      document.addEventListener('keydown', function (e) {
+        const intakeOpen = modalBackdrop.classList.contains('is-open');
+        const aboutOpen = aboutBackdrop.classList.contains('is-open');
+        if (!intakeOpen && !aboutOpen) return;
+
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (intakeOpen) closeIntakeModal(true);
+          if (aboutOpen) closeAboutModal(true);
+          return;
+        }
+
+        if (e.key === 'Tab') {
+          if (intakeOpen) trapFocus(modalDialog, e);
+          if (aboutOpen) trapFocus(aboutDialog, e);
+        }
+      });
+
+      modalForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        const email = modalEmailInput.value.trim();
+
+        if (!isValidEmail(email)) {
+          modalFeedback.textContent = 'Enter a valid work email address.';
+          modalFeedback.className = 'form-feedback is-error';
+          modalEmailInput.focus();
+          return;
+        }
+
+        const ticket = generateTicketId();
+        const tier = modalTierSelect.value;
+        const format = modalFormatSelect.value;
+        const wantsScrubber = modalScrubberCheck.checked;
+
+        receiptTicketId.textContent = 'REF: ' + ticket + ' · ' + tier.toUpperCase();
+        receiptSummary.textContent =
+          'Request logged for ' + email + ' (' + format + '). An ARCHON systems architect will respond within one business day.';
+        receiptScrubberNote.textContent = wantsScrubber
+          ? 'Local PII scrubber (scrubber.py) included — runs offline on your workstation before file transfer.'
+          : 'Standard NDA structural transfer selected. scrubber.py remains available on request.';
+
+        modalForm.style.display = 'none';
+        modalReceipt.classList.add('is-visible');
+        modalDoneBtn.focus();
+      });
+
+      /* =========================================================
+         5. INLINE FINAL CTA FORM
+         ========================================================= */
+      const inlineForm = document.getElementById('inlineCtaForm');
+      const footerEmail = document.getElementById('footerEmail');
+      const inlineFeedback = document.getElementById('inlineFormFeedback');
+
+      inlineForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        const email = footerEmail.value.trim();
+
+        if (!isValidEmail(email)) {
+          inlineFeedback.textContent = 'Enter a valid work email address.';
+          inlineFeedback.className = 'form-feedback is-error';
+          footerEmail.focus();
+          return;
+        }
+
+        const ticket = generateTicketId();
+        inlineFeedback.textContent =
+          ticket + ' · 48-Hour X-Ray queued for ' + email + '. Local PII scrubber instructions dispatched.';
+        inlineFeedback.className = 'form-feedback is-success';
+        footerEmail.value = '';
+      });
+    })();
+  </script>
+</body>
+</html>
