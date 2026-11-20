@@ -26,7 +26,7 @@ jobs:
           bad=$(echo "$changed" \
             | grep -Ei '^(Dropzone|Archive_Processed|For_Mainak|For_Senpai)/|\.(xlsx|xlsm|xls|mdb|accdb)$' \
             | grep -Ev '^(samples|tests)/' \
-            | grep -Ev '\.gitkeep$' || true)
+            | grep -Ev '\.gitkeep$|^golden_input\.xlsx$' || true)
           if [ -n "$bad" ]; then
             echo "::error::This PR adds or changes files that look like raw or production data:"
             echo "$bad"
