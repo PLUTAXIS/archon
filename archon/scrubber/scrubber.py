@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
 CHANGES: cell/comment/property text -> dummy text; typed numbers -> random digits, same shape;
 saved formula results -> removed; chart text/caches -> removed or replaced.
@@ -35,8 +35,6 @@ def inner_text(fragment):
     (single <t> or several rich <r><t> runs concatenated)."""
     return "".join(INNER_TEXT_RUNS.findall(fragment))
 
-
-class ScrubError(Exception):
 class ScrubError(Exception):
     """A problem we can explain to the user in plain words."""
 
@@ -248,6 +246,5 @@ def main(argv=None):
         for why in review:
             print("  - " + why)
     return 0
-
 if __name__ == "__main__":
     sys.exit(main())
