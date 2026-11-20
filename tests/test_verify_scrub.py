@@ -66,6 +66,12 @@ class VerifyTests(unittest.TestCase):
         # an unscrubbed copy still contains the name, so the check must fail
         self.assertIn("FAIL", self.statuses(out=self.orig, words=["Acme"]))
 
+    def test_utf16_sensitive_word_fails(self):
+        bad = Path(self.tmp.name) / "utf16.xlsm"
+        payload = b"Private Customer: " + "Acme".encode("utf-16le")
+        rewrite(self.out, bad, "xl/sharedStrings.xml", payload)
+        self.assertIn("FAIL", self.statuses(out=bad, words=["Acme"]))
+
     def test_sensitive_word_in_preserved_vba_fails(self):
         source = Path(self.tmp.name) / "macro_source.xlsm"
         output = Path(self.tmp.name) / "macro_scrubbed.xlsm"

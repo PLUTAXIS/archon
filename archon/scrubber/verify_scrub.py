@@ -28,6 +28,17 @@ def verify(original, scrubbed, words=()):
     """Return a list of (status, message). Status is OK, FAIL or SKIP."""
     results = []
     with zipfile.ZipFile(original) as a, zipfile.ZipFile(scrubbed) as b:
+        for label, archive in (("original", a), ("scrubbed", b)):
+            names = archive.namelist()
+            duplicates = sorted({n for n in names if names.count(n) > 1})
+            results.append(("FAIL" if duplicates else "OK",
+                            "%s ZIP has no duplicate entries%s" %
+                            (label, ": " + ", ".join(duplicates) if duplicates else "")))
+            corrupt = archive.testzip()
+            results.append(("FAIL" if corrupt else "OK",
+                            "%s ZIP CRC integrity%s" %
+                            (label, ": " + corrupt if corrupt else " verified")))
+
         same = a.namelist() == b.namelist()
         results.append(("OK" if same else "FAIL", "same file parts in the same order"))
         macros = [n for n in a.namelist() if n.endswith("vbaProject.bin")]
@@ -39,10 +50,17 @@ def verify(original, scrubbed, words=()):
         fa, fb = formulas(a), formulas(b)
         results.append(("OK" if fa == fb else "FAIL", "all %d formulas unchanged" % len(fa)))
         for word in words:
-            hits = [n for n in b.namelist()
-                    if word.lower().encode() in b.read(n).lower()]
+            needles = [word.lower().encode("utf-8"),
+                       word.lower().encode("utf-16le"),
+                       word.lower().encode("utf-16be")]
+            hits = []
+            for n in b.namelist():
+                raw = b.read(n).lower()
+                if any(needle and needle in raw for needle in needles):
+                    hits.append(n)
             results.append(("FAIL" if hits else "OK",
-                            "'%s' %s" % (word, "FOUND in " + ", ".join(hits) if hits else "not found")))
+                            "'%s' %s (UTF-8/UTF-16 raw-byte scan)" %
+                            (word, "FOUND in " + ", ".join(hits) if hits else "not found")))
     return results
 
 
