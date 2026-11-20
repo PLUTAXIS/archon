@@ -3,6 +3,7 @@ import ast
 import hashlib
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -115,7 +116,6 @@ class ScrubTests(unittest.TestCase):
 
     def test_numbers_keep_their_shape_and_equal_numbers_match(self):
         sheet = self.scrub()[0]["xl/worksheets/sheet1.xml"].decode()
-        import re
         b1 = re.search(r'<c r="B1"><v>(.*?)</v>', sheet).group(1)
         k1 = re.search(r'<c r="K1"><v>(.*?)</v>', sheet).group(1)
         g1 = re.search(r'<c r="G1"><v>(.*?)</v>', sheet).group(1)
@@ -132,7 +132,6 @@ class ScrubTests(unittest.TestCase):
         self.assertEqual(sheet.count("<c "), 11)
 
     def test_same_text_gets_same_dummy_and_different_text_differs(self):
-        import re
         parts = dict(PARTS)
         parts["xl/sharedStrings.xml"] = (b"<sst><si><t>Acme Corp</t></si><si><t>Other</t></si>"
                                          b"<si><t>Acme Corp</t></si></sst>")
@@ -251,6 +250,104 @@ class RealWorkbookTest(unittest.TestCase):
                             self.assertNotEqual(cell.value, other.value)  # data masked
             # The hand-typed number is still a number, not a formula (so bug-spotting still works)
             self.assertIsInstance(b["Model"]["C30"].value, (int, float))
+
+
+TABLE_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+    'id="1" name="Table1" displayName="Table1" ref="A1:B2">'
+    '<autoFilter ref="A1:B2"/>'
+    '<tableColumns count="2">'
+    '<tableColumn id="1" name="Revenue"/>'
+    '<tableColumn id="2" name="Client"/>'
+    '</tableColumns>'
+    '</table>')
+
+TABLE_SHEET = (
+    '<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData>'
+    '<row r="1">'
+    '<c r="A1" t="inlineStr"><is><t>Revenue</t></is></c>'
+    '<c r="B1" t="inlineStr"><is><t>Client</t></is></c>'
+    '</row>'
+    '<row r="2">'
+    '<c r="A2"><v>50000</v></c>'
+    '<c r="B2" t="inlineStr"><is><t>Acme Corp</t></is></c>'
+    '</row>'
+    '</sheetData></worksheet>')
+
+
+class ExcelTableTests(unittest.TestCase):
+    """Excel Tables (ListObjects): header text and the table's own schema must
+    stay in sync, or Excel throws a repair prompt on open."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.src = os.path.join(self.dir.name, "book.xlsx")
+        self.dst = os.path.join(self.dir.name, "book.scrubbed.xlsx")
+        parts = dict(PARTS)
+        parts["xl/worksheets/sheet1.xml"] = TABLE_SHEET.encode()
+        parts["xl/tables/table1.xml"] = TABLE_XML.encode()
+        build(self.src, parts)
+
+    def run_cli(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = scrubber.main(list(args))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_table_header_text_and_schema_stay_in_sync(self):
+        code, out, _ = self.run_cli(self.src)
+        self.assertEqual(code, 0)
+        with zipfile.ZipFile(self.dst) as z:
+            sheet = z.read("xl/worksheets/sheet1.xml").decode()
+            table = z.read("xl/tables/table1.xml").decode()
+
+        self.assertNotIn("Revenue", sheet)
+        self.assertNotIn("Client", sheet)
+        self.assertNotIn("Revenue", table)
+        self.assertNotIn("Client", table)
+
+        a1_dummy = re.search(r'<c r="A1"[^>]*><is><t>(Text_\d+)</t></is>', sheet).group(1)
+        b1_dummy = re.search(r'<c r="B1"[^>]*><is><t>(Text_\d+)</t></is>', sheet).group(1)
+        revenue_col = re.search(r'<tableColumn id="1" name="(Text_\d+)"', table).group(1)
+        client_col = re.search(r'<tableColumn id="2" name="(Text_\d+)"', table).group(1)
+        self.assertEqual(a1_dummy, revenue_col)
+        self.assertEqual(b1_dummy, client_col)
+
+        self.assertNotIn("table column names", out)
+
+
+class RichInlineStringTests(unittest.TestCase):
+    """A cell can hold an inline string with several formatted runs
+    (<r><t>...</t></r> repeated) instead of one plain <t>."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.src = os.path.join(self.dir.name, "book.xlsx")
+        self.dst = os.path.join(self.dir.name, "book.scrubbed.xlsx")
+        sheet = (
+            '<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData><row r="1">'
+            '<c r="A1" t="inlineStr"><is><r><t>Jane </t></r><r><t>Doe</t></r></is></c>'
+            '</row></sheetData></worksheet>')
+        parts = dict(PARTS)
+        parts["xl/worksheets/sheet1.xml"] = sheet.encode()
+        build(self.src, parts)
+
+    def run_cli(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = scrubber.main(list(args))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_rich_inline_string_is_masked_not_leaked(self):
+        code, _, _ = self.run_cli(self.src)
+        self.assertEqual(code, 0)
+        with zipfile.ZipFile(self.dst) as z:
+            sheet = z.read("xl/worksheets/sheet1.xml").decode()
+        self.assertNotIn("Jane", sheet)
+        self.assertNotIn("Doe", sheet)
 
 
 if __name__ == "__main__":

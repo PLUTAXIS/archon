@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
-
-WHAT IT CHANGES
-  * Text in cells, comments and file properties -> dummy text (Text_1, Text_2 ...)
-  * Numbers typed into cells                    -> random digits, same shape
-  * Saved results of formulas                   -> removed (Excel recalculates them)
-  * Text and cached values inside charts        -> removed or replaced
-WHAT IT KEEPS (on purpose, we need the skeleton)
-  * Formulas, sheet names, sheet layout, and VBA macro code
-
-SAFETY: standard library only. Reads one file, writes one NEW file, never
-changes your original, and never opens a network connection.
-
+CHANGES: cell/comment/property text -> dummy text; typed numbers -> random digits, same shape;
+saved formula results -> removed; chart text/caches -> removed or replaced.
+KEEPS (on purpose): formulas, sheet names, layout, VBA macro code.
+SAFETY: standard library only. Reads one file, writes one NEW file, never changes the original,
+never opens a network connection.
 USAGE:  python scrubber.py MyFile.xlsm      (creates MyFile.scrubbed.xlsm)
 OPTION: --keep-headers  leave row-1 text (column names) readable; everything else is masked.
 """
@@ -23,25 +16,29 @@ import secrets
 import sys
 import zipfile
 
-# Parts we cannot safely scrub. If one is present we tell the user to check it.
 REVIEW = {
     "vbaProject.bin": "VBA macro code (kept on purpose): check it for names, passwords or amounts",
     "pivotCache": "pivot tables keep a copy of the source data",
     "externalLinks": "links to other files (may show file paths and values)",
     "customXml": "custom data added by other programs",
     "embeddings": "embedded files",
-    "xl/tables/": "table column names (formulas need them)",
     "docProps/custom": "custom file properties",
 }
-# File properties that often hold real names.
 PROPERTY_TAGS = ("dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject",
                  "dc:description", "cp:keywords", "Company", "Manager")
-# One cell, either <c .../> (empty) or <c ...>...</c>.
 CELL = re.compile(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", re.DOTALL)
+# Plain text out of <t>...</t> or rich runs <r><t>...</t></r><r>...</r>.
+INNER_TEXT_RUNS = re.compile(r"<t[^>]*>(.*?)</t>", re.DOTALL)
+
+def inner_text(fragment):
+    """The plain text carried by one <is>...</is> or <si>...</si> body
+    (single <t> or several rich <r><t> runs concatenated)."""
+    return "".join(INNER_TEXT_RUNS.findall(fragment))
+
 
 class ScrubError(Exception):
+class ScrubError(Exception):
     """A problem we can explain to the user in plain words."""
-
 
 class Masker:
     """Creates dummy values. The same original always gets the same dummy."""
@@ -78,7 +75,6 @@ class Masker:
                 self.numbers[original] = "".join(out) + exponent
         return self.numbers[original]
 
-
 def row_of(attrs):
     found = re.search(r'\br="[A-Z]+(\d+)"', attrs)
     return int(found.group(1)) if found else 10 ** 9  # unknown row counts as data
@@ -112,8 +108,9 @@ def scrub_sheet(xml, m):
                               body, flags=re.DOTALL)
             elif kind == "inlineStr":  # text stored inside the cell
                 if not (m.keep_headers and row_of(attrs) == 1):
-                    body = re.sub(r"<is>.*?</is>",
-                                  lambda x: "<is><t>%s</t></is>" % m.text(x.group(0)), body, flags=re.DOTALL)
+                    body = re.sub(r"<is>(.*?)</is>",
+                                  lambda x: "<is><t>%s</t></is>" % m.text(inner_text(x.group(1))),
+                                  body, flags=re.DOTALL)
             elif kind == "s" and m.keep:  # a header word reused further down: mask it here
                 value = re.search(r"<v>(\d+)</v>", body)
                 if value and int(value.group(1)) in m.keep and row_of(attrs) != 1:
@@ -130,8 +127,8 @@ def scrub_shared_strings(xml, m):
         i, idx[0] = idx[0], idx[0] + 1
         if i in m.keep or x.group(0) == "<si/>":
             return x.group(0)  # a header word we were asked to keep, or an empty string
-        return "<si><t>%s</t></si>" % m.text(x.group(0))
-    return re.sub(r"<si>.*?</si>|<si/>", fix, xml, flags=re.DOTALL)
+        return "<si><t>%s</t></si>" % m.text(inner_text(x.group(1) or ""))
+    return re.sub(r"<si>(.*?)</si>|<si/>", fix, xml, flags=re.DOTALL)
 
 def scrub_properties(xml, m):
     """Redact author and metadata tags in a document properties XML part."""
@@ -145,6 +142,13 @@ def scrub_comments(xml, m):
     xml, n = re.subn(r"<t\b[^>/]*>.*?</t>", "<t>redacted</t>", xml, flags=re.DOTALL)
     m.count["comments"] += n
     return xml
+
+def scrub_table(xml, m):
+    # Column names must match the header row's dummy, or Excel repairs the file on open.
+    if m.keep_headers:
+        return xml
+    return re.sub(r'(<tableColumn\b[^>]*\bname=")([^"]*)(")',
+                  lambda x: x.group(1) + m.text(x.group(2)) + x.group(3), xml)
 
 def scrub_threaded_comments(xml, m):
     xml, n = re.subn(r"<text>.*?</text>", "<text>redacted</text>", xml, flags=re.DOTALL)
@@ -172,6 +176,8 @@ def pick_handler(name):
         return scrub_threaded_comments
     if re.fullmatch(r"xl/charts/chart\d*\.xml", name):
         return scrub_chart
+    if re.fullmatch(r"xl/tables/table\d*\.xml", name):
+        return scrub_table
     return None  # copied byte-for-byte (this is how VBA stays intact)
 
 def scrub_file(src, dst, keep_headers=False):
@@ -199,11 +205,9 @@ def scrub_file(src, dst, keep_headers=False):
     review = ["%s: %s" % (name, next((why for key, why in REVIEW.items() if key in name), "uninspected workbook component copied unchanged; check for confidential data")) for name in untouched]
     return m.count, review
 
-
 def fail(message):
     print("ERROR: " + message, file=sys.stderr)
     return 1
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
