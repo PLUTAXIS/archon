@@ -1,4 +1,4 @@
-﻿"""Tests for verify_scrub.py. Run from the repo folder:  python -m unittest -v"""
+"""Tests for verify_scrub.py. Run from the repo folder:  python -m unittest -v"""
 import os
 import sys
 import tempfile
@@ -65,6 +65,21 @@ class VerifyTests(unittest.TestCase):
     def test_word_left_behind_fails(self):
         # an unscrubbed copy still contains the name, so the check must fail
         self.assertIn("FAIL", self.statuses(out=self.orig, words=["Acme"]))
+
+    def test_sensitive_word_in_preserved_vba_fails(self):
+        source = Path(self.tmp.name) / "macro_source.xlsm"
+        output = Path(self.tmp.name) / "macro_scrubbed.xlsm"
+        macro = b"\xd0\xcf\x11\xe0 VBA payload: Acme Customer Record"
+
+        rewrite(self.orig, source, "xl/vbaProject.bin", macro)
+        scrubber.scrub_file(source, output)
+
+        results = verify_scrub.verify(source, output, ["Acme"])
+        self.assertIn("FAIL", [status for status, _ in results])
+        self.assertTrue(any(
+            status == "FAIL" and "FOUND in xl/vbaProject.bin" in message
+            for status, message in results
+        ))
 
     def test_file_without_vba_is_skipped_not_passed(self):
         plain, plain_out = Path(self.tmp.name) / "p.xlsx", Path(self.tmp.name) / "p_s.xlsx"
