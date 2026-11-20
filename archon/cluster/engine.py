@@ -8,6 +8,7 @@ Input rows are (sheet, address, content) where content is either a formula
 """
 
 from __future__ import annotations
+from archon.parser.kpi import ParseKPI
 
 import json
 from collections import defaultdict
@@ -148,6 +149,7 @@ def cluster_id_for(formula: str, addr: str) -> str:
 
 def cluster_cells_ast(
     rows: Iterable[Row],
+    kpi: ParseKPI | None = None,
 ) -> tuple[Clusters, list[Constant], list[Constant]]:
     """Group formula cells by (sheet, column, blake3 AST-hash) and separate
     out constants -- the AST-hash-based counterpart to cluster_cells().
@@ -172,9 +174,13 @@ def cluster_cells_ast(
         try:
             cid = cluster_id_for(text, addr)
             row, col = parse_address(addr)
-        except (ParseError, ValueError):
+        except (ParseError, ValueError) as exc:
             unparsed.append((sheet, addr, text))
+            if kpi is not None:
+                kpi.record_failed(addr, text, str(exc))
             continue
+        if kpi is not None:
+            kpi.record_parsed(addr)
         key = (sheet, num_to_col(col), cid)
         clusters[key].append((row, addr))
     for members in clusters.values():

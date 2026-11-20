@@ -1,0 +1,6 @@
+{
+  "name": "ARCHON",
+  "description": "Neuro-symbolic audit engine that decompiles Excel, VBA, and Access financial models, maps every dependency, and delivers audit-ready documentation plus cryptographically-verified Python migrations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

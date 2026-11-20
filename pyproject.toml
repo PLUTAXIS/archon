@@ -15,6 +15,7 @@ dependencies = [
     "fastapi>=0.165.0",
     "uvicorn[standard]>=0.54.0",
     "python-multipart>=0.0.34",
+    "hypothesis>=6.170.17",
 ]
 
 [build-system]
