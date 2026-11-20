@@ -47,6 +47,8 @@ def verify(original, scrubbed, words=()):
         for n in macros:
             ok = n in b.namelist() and hashlib.sha256(a.read(n)).digest() == hashlib.sha256(b.read(n)).digest()
             results.append(("OK" if ok else "FAIL", "VBA identical byte for byte (%s)" % n))
+        if macros:
+            results.append(("SKIP", "VBA compressed/encoded strings were not decompiled; raw-byte scan only"))
         fa, fb = formulas(a), formulas(b)
         results.append(("OK" if fa == fb else "FAIL", "all %d formulas unchanged" % len(fa)))
         for word in words:
