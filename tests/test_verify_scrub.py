@@ -48,8 +48,10 @@ class VerifyTests(unittest.TestCase):
     def statuses(self, orig=None, out=None, words=()):
         return [s for s, _ in verify_scrub.verify(orig or self.orig, out or self.out, words)]
 
-    def test_good_scrub_passes_every_check(self):
-        self.assertEqual(set(self.statuses(words=["Acme"])), {"OK"})
+    def test_good_scrub_has_no_failures_and_reports_vba_limit(self):
+        statuses = self.statuses(words=["Acme"])
+        self.assertNotIn("FAIL", statuses)
+        self.assertIn("SKIP", statuses)
 
     def test_changed_vba_fails(self):
       bad = Path(self.tmp.name) / "bad.xlsm"
