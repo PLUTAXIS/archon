@@ -18,4 +18,6 @@ RUN uv run python -m unittest
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
-CMD ["uv", "run", "python", "-m", "archon.graph.graph_builder", "samples/sample_input.json", "-o", "/tmp/dag_graph.json"]
+EXPOSE 10000
+
+CMD ["sh", "-c", "uv run uvicorn archon.api.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
