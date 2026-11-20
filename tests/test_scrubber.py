@@ -153,6 +153,18 @@ class ScrubTests(unittest.TestCase):
         with zipfile.ZipFile(self.dst) as z:
             self.assertIsNone(z.testzip())
         self.assertIn("VBA macro code", out)
+    def test_unknown_component_is_preserved_and_reported(self):
+        parts = dict(PARTS)
+        name = "xl/customData/private-records.xml"
+        payload = b"<records>Confidential Customer Record</records>"
+        parts[name] = payload
+        build(self.src, parts)
+
+        output, out = self.scrub()
+        self.assertEqual(output[name], payload)
+        self.assertIn(name, out)
+        self.assertIn("uninspected workbook component copied unchanged", out)
+        self.assertIn("SANITIZATION STATUS: REVIEW_REQUIRED", out)
 
     def test_two_runs_use_different_random_digits(self):
         first = self.scrub()[0]["xl/worksheets/sheet1.xml"]

@@ -1,9 +1,10 @@
-﻿"""verify_scrub.py - check a scrubbed workbook against its original (offline, stdlib only).
+"""verify_scrub.py - check a scrubbed workbook against its original (offline, stdlib only).
 
 Usage:  python verify_scrub.py ORIGINAL.xlsm SCRUBBED.xlsm [word ...]
 
 Checks: same parts, VBA identical byte for byte, same formulas, and none of the
-words you list (names, company, amounts) remain anywhere in the scrubbed file.
+words you list remain in raw ZIP part bytes. This is NOT full VBA decompilation:
+compressed or encoded strings may not be detected.
 Prints OK / FAIL / SKIP per check. Exit code 0 only when nothing failed.
 """
 import hashlib
@@ -39,7 +40,7 @@ def verify(original, scrubbed, words=()):
         results.append(("OK" if fa == fb else "FAIL", "all %d formulas unchanged" % len(fa)))
         for word in words:
             hits = [n for n in b.namelist()
-                    if n not in macros and word.lower().encode() in b.read(n).lower()]
+                    if word.lower().encode() in b.read(n).lower()]
             results.append(("FAIL" if hits else "OK",
                             "'%s' %s" % (word, "FOUND in " + ", ".join(hits) if hits else "not found")))
     return results

@@ -197,7 +197,7 @@ def scrub_file(src, dst, keep_headers=False):
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = item.external_attr
                 zout.writestr(info, data)
-    review = [why for key, why in REVIEW.items() if any(key in n for n in untouched)]
+    review = ["%s: %s" % (name, next((why for key, why in REVIEW.items() if key in name), "uninspected workbook component copied unchanged; check for confidential data")) for name in untouched]
     return m.count, review
 
 
@@ -239,12 +239,12 @@ def main(argv=None):
     print("Kept as-is on purpose: formulas, sheet names, layout, VBA code.")
     if args.keep_headers:
         print("Row 1 text was KEPT readable (--keep-headers). Check it holds no real names.")
+    print("SANITIZATION STATUS: " + ("REVIEW_REQUIRED" if review else "PROCESSING_COMPLETE (not a safety certification)"))
     if review:
         print("PLEASE CHECK before sending (copied unchanged, may contain real data):")
         for why in review:
             print("  - " + why)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
