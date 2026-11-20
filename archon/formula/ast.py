@@ -40,7 +40,7 @@ class UnaryOp:
     """A prefix or postfix unary operation: unary minus (-A1) or percent (50%)."""
 
     op: str
-    operand: "Node"
+    operand: Node
     postfix: bool = False
 
 
@@ -51,8 +51,8 @@ class BinOp:
     """
 
     op: str
-    left: "Node"
-    right: "Node"
+    left: Node
+    right: Node
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +60,7 @@ class Func:
     """A function call, e.g. SUM(A1:A10) or IF(A1>0, B1, 0)."""
 
     name: str
-    args: tuple["Node", ...]
+    args: tuple[Node, ...]
 
 
 Node = BinOp | UnaryOp | Func | Ref | Lit
