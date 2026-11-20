@@ -1,0 +1,18 @@
+name: Bot self-test
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/**'
+      - '.github/archon-bot.json'
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the bot's unit tests
+        run: python3 -m unittest discover -s .github/scripts -p "test_*.py" -v

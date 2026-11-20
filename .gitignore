@@ -14,3 +14,13 @@ For_Senpai/
 extracted_*.json
 vba_module_*.txt
 dist/
+
+# added by setup-archon-bots
+*.py[cod]
+.pytest_cache/
+venv/
+.env
+*.egg-info/
+.coverage
+htmlcov/
+node_modules/

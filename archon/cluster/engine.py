@@ -15,7 +15,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from archon.formula.r1c1 import num_to_col, parse_address, to_r1c1
+from archon.formula.ast import BinOp, Func, Lit, Node, Ref, UnaryOp
+from archon.formula.parser import ParseError, parse
+from archon.formula.r1c1 import num_to_col, parse_address, to_r1c1, to_r1c1_ast
+
+import blake3
 
 Row = tuple[str, str, str]
 ClusterKey = tuple[str, str, str]
@@ -81,6 +85,101 @@ def contiguous_runs(rows_sorted: list[int]) -> list[tuple[int, int]]:
         prev = r
     runs.append((start, prev))
     return runs
+
+
+# --- AST-hash-based clustering ---------------------------------------------
+#
+# cluster_cells() above clusters by string equality of R1C1 text (the
+# original, pre-parser shortcut). The function below is the brief's real
+# architecture (see Project Archon brief §3): cluster by blake3 hash of the
+# formula's *canonical AST* -- the parsed, R1C1-translated tree -- rather
+# than its text. This means two formulas that are structurally identical
+# but spelled differently (e.g. differing only in incidental whitespace
+# the tokenizer already discards) are guaranteed to land in the same
+# cluster. Note this does NOT currently cover function-name case (SUM vs
+# sum): the parser preserves a function's original case in Func.name, so
+# sum(A1) and SUM(A1) hash differently today. The real payoff is
+# robustness: this is the path any future formula-text normalization (e.g.
+# adding case-insensitive function names in the parser or here) rides
+# on for free, since it hashes structure, not text.
+#
+# This also finally confirms the cluster-id format Mainak's PROGRESS.md
+# flagged as "to confirm with Senpai": a cluster's id is the hex blake3
+# digest of its canonical AST string, computed by _canonical_ast_string().
+
+
+def _canonical_ast_string(node: Node) -> str:
+    """Serialize an AST node into a deterministic string for hashing.
+
+    Written by hand, rather than relying on the dataclasses' own repr(),
+    so the cluster-id format doesn't silently change if ast.py's repr
+    output ever changes for unrelated reasons (e.g. a field reorder).
+    """
+    if isinstance(node, Lit):
+        return f"L:{node.value!r}"
+    if isinstance(node, Ref):
+        return f"R:{node.sheet!r}:{node.r1c1}:{node.absolute}"
+    if isinstance(node, UnaryOp):
+        return f"U:{node.op}:{node.postfix}:({_canonical_ast_string(node.operand)})"
+    if isinstance(node, BinOp):
+        return (
+            f"B:{node.op}:({_canonical_ast_string(node.left)},"
+            f"{_canonical_ast_string(node.right)})"
+        )
+    if isinstance(node, Func):
+        args = ",".join(_canonical_ast_string(a) for a in node.args)
+        return f"F:{node.name}:[{args}]"
+    raise TypeError(f"Unknown AST node type: {type(node).__name__}")
+
+
+def cluster_id_for(formula: str, addr: str) -> str:
+    """Compute the blake3-hex cluster id for one formula at one address.
+
+    Parses the formula, translates every Ref to real R1C1 text anchored at
+    addr, serializes the result canonically, and hashes it. Raises
+    ParseError if the formula can't be parsed, or ValueError if its AST is
+    nested too deeply to translate (see parser.parse and r1c1.to_r1c1_ast).
+    """
+    row, col = parse_address(addr)
+    ast = parse(formula)
+    canonical_ast = to_r1c1_ast(ast, (row, col))
+    return blake3.blake3(_canonical_ast_string(canonical_ast).encode("utf-8")).hexdigest()
+
+
+def cluster_cells_ast(
+    rows: Iterable[Row],
+) -> tuple[Clusters, list[Constant], list[Constant]]:
+    """Group formula cells by (sheet, column, blake3 AST-hash) and separate
+    out constants -- the AST-hash-based counterpart to cluster_cells().
+
+    Returns (clusters, constants, unparsed). clusters and constants have
+    the same shapes as cluster_cells()'s return value. unparsed lists any
+    formula cell that could not be parsed or translated (a malformed or
+    unsupported formula) as (sheet, address, content) tuples, rather than
+    raising and aborting the whole batch -- these need a human or Saba's
+    ground truth, not a silent drop and not a crash.
+    """
+    clusters: defaultdict[ClusterKey, list[tuple[int, str]]] = defaultdict(list)
+    constants: list[Constant] = []
+    unparsed: list[Constant] = []
+    for sheet, addr, content in rows:
+        text = str(content).strip()
+        if not text:
+            continue
+        if not text.startswith("="):
+            constants.append((sheet, addr, text))
+            continue
+        try:
+            cid = cluster_id_for(text, addr)
+            row, col = parse_address(addr)
+        except (ParseError, ValueError):
+            unparsed.append((sheet, addr, text))
+            continue
+        key = (sheet, num_to_col(col), cid)
+        clusters[key].append((row, addr))
+    for members in clusters.values():
+        members.sort()
+    return dict(clusters), constants, unparsed
 
 
 def load_formulas(path: str | Path) -> list[Row]:
