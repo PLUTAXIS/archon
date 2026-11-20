@@ -22,7 +22,7 @@ def git_sha() -> str:
         return "unknown"
 
 
-def stamp() -> dict:
+def stamp() -> dict[str, str | bool]:
     return {
         "archon_version": _version(),
         "git_sha": git_sha(),
@@ -39,3 +39,4 @@ def _is_dirty() -> bool:
         return bool(out)
     except (subprocess.SubprocessError, OSError):
         return False
+
