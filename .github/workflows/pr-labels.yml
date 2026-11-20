@@ -1,0 +1,38 @@
+name: PR labels
+
+# pull_request_target gives fork PRs a token that can label.
+# It is safe here because nothing from the PR is checked out or executed.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  path-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v7
+        with:
+          sync-labels: true
+
+  size-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const total = pr.additions + pr.deletions;
+            const size = total < 10 ? 'XS' : total < 50 ? 'S' : total < 250 ? 'M' : total < 1000 ? 'L' : 'XL';
+            const label = `size/${size}`;
+            const { owner, repo } = context.repo;
+            const current = pr.labels.map(l => l.name);
+            for (const name of current.filter(n => n.startsWith('size/') && n !== label)) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number: pr.number, name });
+            }
+            if (!current.includes(label)) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [label] });
+            }
