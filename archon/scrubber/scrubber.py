@@ -39,7 +39,6 @@ PROPERTY_TAGS = ("dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject",
 # One cell, either <c .../> (empty) or <c ...>...</c>.
 CELL = re.compile(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", re.DOTALL)
 
-
 class ScrubError(Exception):
     """A problem we can explain to the user in plain words."""
 
