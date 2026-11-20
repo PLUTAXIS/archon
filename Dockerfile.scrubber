@@ -1,0 +1,20 @@
+﻿FROM python:3.12-slim
+
+WORKDIR /app
+
+# Only the scrubber module — no other archon submodules, no external deps needed
+COPY archon/__init__.py ./archon/__init__.py
+COPY archon/scrubber ./archon/scrubber
+
+# Only the scrubber-related tests
+COPY tests/test_scrubber.py tests/test_scrubber_comments.py tests/test_scrubber_headers.py tests/test_verify_scrub.py ./tests/
+COPY tests/__init__.py ./tests/__init__.py
+
+# The build fails if any scrubber test fails.
+RUN python -m unittest discover -s tests -p "test_scrubber*.py" -v \
+    && python -m unittest tests.test_verify_scrub -v
+
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
+USER appuser
+
+CMD ["python", "-m", "archon.scrubber.scrubber", "--help"]
