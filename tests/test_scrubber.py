@@ -103,8 +103,9 @@ class ScrubTests(unittest.TestCase):
         self.assertIn("<f>B1*2</f>", sheet)
         self.assertIn('<f>A1&amp;"x"</f>', sheet)
         self.assertIn('<f t="shared" si="0"/>', sheet)
-        for gone in ("290001", "Acme Corp x", "777"):
-            self.assertNotIn(gone, sheet)
+        for cell_ref in ("C1", "I1", "J1"):
+            cell = re.search(rf'<c r="{cell_ref}"[^>]*>(.*?)</c>', sheet).group(1)
+            self.assertNotIn("<v>", cell, f"{cell_ref} still has a cached result")
 
     def test_vba_is_byte_identical(self):
         self.assertEqual(self.scrub()[0]["xl/vbaProject.bin"], VBA)
