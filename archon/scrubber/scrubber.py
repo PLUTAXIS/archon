@@ -106,8 +106,8 @@ def scrub_sheet(xml, m):
             body, n = re.subn(r"<v>.*?</v>|<v/>", "", body, flags=re.DOTALL)
             m.count["formula_results"] += n
         else:
-            kind = re.search(r'\bt="(\w+)"', attrs)
-            kind = kind.group(1) if kind else "n"
+            kind = re.search(r"""\bt=(?:"(\w+)"|'(\w+)')""", attrs)
+            kind = (kind.group(1) or kind.group(2)) if kind else "n"
             if kind == "n":  # a typed-in number
                 body = re.sub(r"<v>(.*?)</v>", lambda x: "<v>%s</v>" % m.number(x.group(1)),
                               body, flags=re.DOTALL)
@@ -118,7 +118,7 @@ def scrub_sheet(xml, m):
             elif kind == "s" and m.keep:  # a header word reused further down: mask it here
                 value = re.search(r"<v>(\d+)</v>", body)
                 if value and int(value.group(1)) in m.keep and row_of(attrs) != 1:
-                    attrs = attrs.replace('t="s"', 't="inlineStr"')
+                    attrs = re.sub(r"""t=(?:"s"|'s')""", 't="inlineStr"', attrs)
                     body = "<is><t>%s</t></is>" % m.text(("shared", int(value.group(1))))
             # other "s" cells point into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
         return "<c%s>%s</c>" % (attrs, body)
