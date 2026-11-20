@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import subprocess
 from importlib import metadata
-from pathlib import Path
 
 
 def _version() -> str:
@@ -19,7 +18,7 @@ def git_sha() -> str:
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return "unknown"
 
 
@@ -38,5 +37,5 @@ def _is_dirty() -> bool:
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         return bool(out)
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return False
