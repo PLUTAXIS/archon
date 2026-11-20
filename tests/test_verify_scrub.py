@@ -52,9 +52,10 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(set(self.statuses(words=["Acme"])), {"OK"})
 
     def test_changed_vba_fails(self):
-        bad = Path(self.tmp.name) / "bad.xlsm"
-        rewrite(self.out, bad, "xl/vbaProject.bin", VBA[:-1] + b"X")
-        self.assertIn("FAIL", self.statuses(out=bad))
+      bad = Path(self.tmp.name) / "bad.xlsm"
+      flipped = bytes([VBA[-1] ^ 0xFF])  # guaranteed different from the last byte, whatever it is
+      rewrite(self.out, bad, "xl/vbaProject.bin", VBA[:-1] + flipped)
+      self.assertIn("FAIL", self.statuses(out=bad))
 
     def test_changed_formula_fails(self):
         bad = Path(self.tmp.name) / "bad.xlsm"
