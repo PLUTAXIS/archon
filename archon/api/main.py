@@ -2,6 +2,7 @@
 from zipfile import BadZipFile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from starlette.middleware.cors import CORSMiddleware
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
@@ -9,6 +10,17 @@ app = FastAPI(
     title="ARCHON API",
     description="Deterministic spreadsheet extraction and audit MVP",
     version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
