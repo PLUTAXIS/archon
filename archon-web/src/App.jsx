@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import './App.css'
 
 const API_BASE = (
@@ -35,6 +35,109 @@ function Icon({ name, size = 20 }) {
   if (name === 'activity') return <svg {...common}><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>
   if (name === 'alert') return <svg {...common}><path d="M12 9v4m0 4h.01" /><path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
   return <svg {...common}><circle cx="12" cy="12" r="9" /></svg>
+}
+
+function AuditReport({ analysis }) {
+  const { summary, bugs, cycles, report } = analysis
+  const section = (kind) => report.sections.find((s) => s.kind === kind)?.entries ?? []
+  const risky = section('risk')
+  const explained = section('explanations')
+  const unverified = section('unverified_appendix')
+
+  return (
+    <>
+      <div className="metric-grid">
+        <div className="metric-card">
+          <span className="metric-icon"><Icon name="activity" size={18} /></span>
+          <strong>{summary.clusters.toLocaleString()}</strong>
+          <span>Logic blocks ({summary.compression_ratio.toFixed(1)}× compression)</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-icon"><Icon name="alert" size={18} /></span>
+          <strong>{summary.override_bugs}</strong>
+          <span>Hardcoded overrides</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-icon"><Icon name="alert" size={18} /></span>
+          <strong>{summary.cycles}</strong>
+          <span>Circular references</span>
+        </div>
+      </div>
+
+      <div className="result-block">
+        <div className="block-heading"><h4>Critical findings: bug ledger</h4><span>{bugs.length} found</span></div>
+        {bugs.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Cell</th><th>Typed value</th><th>Expected formula (R1C1)</th><th>Cells affected</th><th>Severity</th></tr></thead>
+              <tbody>
+                {bugs.map((b) => (
+                  <tr key={b.bug_id}>
+                    <td>{b.bug_id}</td>
+                    <td><code>{b.sheet}!{b.address}</code></td>
+                    <td><code>{String(b.observed)}</code></td>
+                    <td><code>{b.expected_r1c1}</code></td>
+                    <td title={b.downstream_sample.join(', ')}>{b.downstream_node_count}</td>
+                    <td>{b.severity}/5</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="empty-state">No hardcoded values found inside copied formula ranges.</p>}
+      </div>
+
+      {cycles.length > 0 && (
+        <div className="result-block">
+          <div className="block-heading"><h4>Circular references</h4><span>needs human review</span></div>
+          <div className="formula-list">
+            {cycles.map((c) => (
+              <div className="formula-row" key={c.members.join('|')}>
+                <div className="formula-location">
+                  <strong>Suggested: {c.suggested_classification === 'logic' ? 'intentional' : 'error'}</strong>
+                  <span>{c.reason}</span>
+                </div>
+                <code>{c.members.join(' → ')}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="result-block">
+        <div className="block-heading"><h4>Risk ranking</h4><span>{risky.length} flagged</span></div>
+        {risky.length ? (
+          <div className="formula-list">
+            {risky.map((e) => (
+              <div className="formula-row" key={e.node_id}>
+                <div className="formula-location"><strong>{e.risk_score}/100</strong><span>{e.risk_flags.join(', ')}</span></div>
+                <code>{e.node_id}</code>
+              </div>
+            ))}
+          </div>
+        ) : <p className="empty-state">No risk flags raised.</p>}
+      </div>
+
+      <div className="result-block">
+        <div className="block-heading"><h4>What the formulas do</h4><span>{explained.length} explained · {unverified.length} unverified</span></div>
+        {explained.length ? (
+          <div className="formula-list">
+            {explained.map((e) => (
+              <div className="formula-row" key={e.node_id}>
+                <div className="formula-location"><strong>{e.node_id}</strong></div>
+                <span>{e.plain_english}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p className="empty-state">No formulas matched a known pattern yet.</p>}
+        {unverified.length > 0 && (
+          <p className="result-footnote">
+            Not explained (no known pattern, shown rather than guessed): {unverified.map((e) => e.node_id).join(', ')}
+          </p>
+        )}
+      </div>
+    </>
+  )
 }
 
 function App() {
@@ -239,9 +342,9 @@ function App() {
             {file && status !== 'success' && (
               <button className="analyze-button" type="button" onClick={uploadWorkbook} disabled={status === 'uploading'}>
                 {status === 'uploading' ? (
-                  <><span className="spinner" /> Extracting workbook...</>
+                  <><span className="spinner" /> Auditing workbook...</>
                 ) : (
-                  <>Extract workbook <Icon name="arrow" size={18} /></>
+                  <>Audit workbook <Icon name="arrow" size={18} /></>
                 )}
               </button>
             )}
@@ -257,7 +360,7 @@ function App() {
               <div className="results" aria-live="polite">
                 <div className="result-heading">
                   <div>
-                    <div className="success-label"><Icon name="check" size={15} /> EXTRACTION COMPLETE</div>
+                    <div className="success-label"><Icon name="check" size={15} /> AUDIT COMPLETE</div>
                     <h3>{result.filename}</h3>
                     <p>{result.scan_complete ? 'Workbook scan completed.' : 'Partial scan completed due to the scan limit.'}</p>
                   </div>
@@ -281,6 +384,8 @@ function App() {
                     <span>Formulas found</span>
                   </div>
                 </div>
+
+                {result.analysis && <AuditReport analysis={result.analysis} />}
 
                 <div className="result-block">
                   <h4>Worksheet overview</h4>
@@ -328,8 +433,8 @@ function App() {
 
                 {result.limitations?.length > 0 && (
                   <div className="limitations">
-                    <strong>Current extraction scope</strong>
-                    <p>{result.limitations[0]} Full bug detection and VBA analysis are not part of this version.</p>
+                    <strong>Current scope</strong>
+                    <p>{result.limitations.join(' ')}</p>
                   </div>
                 )}
               </div>

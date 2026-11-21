@@ -1,10 +1,14 @@
-﻿from io import BytesIO
+from io import BytesIO
+from uuid import UUID
 from zipfile import BadZipFile
 
+import blake3
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from starlette.middleware.cors import CORSMiddleware
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from starlette.middleware.cors import CORSMiddleware
+
+from archon.pipeline import run_audit
 
 app = FastAPI(
     title="ARCHON API",
@@ -77,6 +81,7 @@ async def audit_workbook(file: UploadFile = File(...)):
 
     sheets = []
     formula_samples = []
+    rows = []
     formula_count = 0
     cells_scanned = 0
     scan_complete = True
@@ -98,8 +103,17 @@ async def audit_workbook(file: UploadFile = File(...)):
 
                     cells_scanned += 1
 
+                    if cell.value is None:
+                        continue
+
                     if cell.data_type == "f":
                         formula_count += 1
+                        # array formulas arrive as objects carrying the text
+                        rows.append((worksheet.title, cell.coordinate, str(getattr(cell.value, "text", cell.value))))
+                    else:
+                        text = str(cell.value)
+                        # a text value that merely looks like a formula must not be analysed as one
+                        rows.append((worksheet.title, cell.coordinate, "'" + text if text.startswith("=") else text))
 
                         if len(formula_samples) < MAX_FORMULA_SAMPLES:
                             formula_samples.append({
@@ -116,9 +130,12 @@ async def audit_workbook(file: UploadFile = File(...)):
     finally:
         workbook.close()
 
+    workbook_id = UUID(bytes=blake3.blake3(content).digest(length=16))
+    analysis = run_audit(rows, workbook_id)
+
     return {
         "status": "success",
-        "audit_level": "extraction_mvp",
+        "audit_level": "full_pipeline",
         "filename": filename,
         "file_size_bytes": len(content),
         "sheet_count": len(sheets),
@@ -128,9 +145,9 @@ async def audit_workbook(file: UploadFile = File(...)):
         "formula_samples": formula_samples,
         "formula_samples_truncated": formula_count > len(formula_samples),
         "scan_complete": scan_complete,
+        "analysis": analysis,
         "limitations": [
-            "This endpoint currently extracts workbook structure and formulas.",
-            "Full bug detection, VBA analysis, and risk scoring are not yet integrated.",
-            "Workbooks exceeding the scan limit receive a partial extraction.",
+            "VBA macros and Access files are not analysed yet (.xlsx formulas only).",
+            "Workbooks exceeding the scan limit are analysed on a partial extraction.",
         ],
     }
