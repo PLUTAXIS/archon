@@ -89,7 +89,7 @@ class TestClusterCellsAst(unittest.TestCase):
         rows = [("Sheet1", f"D{r}", f"=B{r}*C{r}") for r in range(2, 5)]
         rows.append(("Sheet1", "D5", "145000"))
         rows += [("Sheet1", f"D{r}", f"=B{r}*C{r}") for r in range(6, 9)]
-        clusters, constants, unparsed = cluster_cells_ast(rows)
+        clusters, constants, _unparsed = cluster_cells_ast(rows)
         self.assertEqual(len(clusters), 1)
         self.assertEqual(constants, [("Sheet1", "D5", "145000")])
         ((members),) = clusters.values()
@@ -105,14 +105,14 @@ class TestClusterCellsAst(unittest.TestCase):
     def test_malformed_formula_goes_to_unparsed_not_crash(self):
         """A malformed formula is routed to unparsed, not raised."""
         rows = [("Sheet1", "D2", "=B2*C2"), ("Sheet1", "D3", "=)")]
-        clusters, constants, unparsed = cluster_cells_ast(rows)
+        clusters, _constants, unparsed = cluster_cells_ast(rows)
         self.assertEqual(len(clusters), 1)
         self.assertEqual(unparsed, [("Sheet1", "D3", "=)")])
 
     def test_blank_rows_skipped(self):
         """Blank/whitespace-only content is skipped entirely."""
         rows = [("Sheet1", "D2", "=B2*C2"), ("Sheet1", "D3", "   ")]
-        clusters, constants, unparsed = cluster_cells_ast(rows)
+        _clusters, constants, unparsed = cluster_cells_ast(rows)
         self.assertEqual(len(unparsed), 0)
         self.assertEqual(len(constants), 0)
 

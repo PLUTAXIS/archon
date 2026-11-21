@@ -2,7 +2,7 @@
 
 import unittest
 
-from archon.cluster.bugs import Bug, find_override_bugs
+from archon.cluster.bugs import find_override_bugs
 from archon.cluster.engine import cluster_cells_ast
 
 

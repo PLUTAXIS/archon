@@ -88,7 +88,7 @@ class TestSuggestClassification(unittest.TestCase):
         """A cycle with no iterative-calc function suggests 'error'."""
         cycle = Cycle(members=frozenset({("S", "A"), ("S", "B")}))
         formulas = {("S", "A"): "=B1+1", ("S", "B"): "=A1+1"}
-        label, reason = suggest_classification(cycle, formulas)
+        label, _reason = suggest_classification(cycle, formulas)
         self.assertEqual(label, "error")
 
     def test_suggestion_is_case_insensitive(self):
