@@ -10,6 +10,7 @@ patterns:
       - {kind: int, as: column}
       - {kind: lit, values: {"0": exact}, as: match}
     template: "Looks up {key} in the first column of {table} and returns column {column} (exact match)."
+    phrase: "the column {column} value for {key} in {table} (exact match)"
   - id: vlookup_approx
     idiom: lookup
     shape: call_args
@@ -21,6 +22,7 @@ patterns:
       - {kind: int, as: column}
       - {kind: lit, values: {"1": approximate}, as: match}
     template: "Looks up {key} in the first column of {table} and returns column {column} (approximate match)."
+    phrase: "the column {column} value for {key} in {table} (approximate match)"
   - id: vlookup_default
     idiom: lookup
     shape: call_args
@@ -31,6 +33,7 @@ patterns:
       - {kind: range, as: table}
       - {kind: int, as: column}
     template: "Looks up {key} in the first column of {table} and returns column {column} (approximate match, the default)."
+    phrase: "the column {column} value for {key} in {table} (approximate match by default)"
   - id: index_match_exact
     idiom: lookup
     shape: call_args
@@ -45,3 +48,4 @@ patterns:
           - {kind: range, as: lookup_range}
           - {kind: lit, values: {"0": exact}, as: match}
     template: "Looks up {key} in {lookup_range} and returns the matching value from {result_range} (exact match)."
+    phrase: "the value from {result_range} matching {key} in {lookup_range} (exact match)"

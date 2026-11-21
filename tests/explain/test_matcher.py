@@ -19,6 +19,15 @@ def _assert_unverified(result: ExplanationRecord, node_id: str) -> None:
     assert result.confidence == 0.0
 
 
+def _assert_read_aloud(result: ExplanationRecord, node_id: str, text: str) -> None:
+    """Not the specific idiom: the general arithmetic fallback reads it exactly."""
+    assert result.node_id == node_id
+    assert result.idiom == "other"
+    assert result.evidence is not None
+    assert result.evidence.pattern_id in ("arithmetic", "arithmetic_constant")
+    assert result.plain_english == text
+
+
 def test_positive_tiered_rate_table() -> None:
     """Matches a 3+ deep nested IF pivoting on a single variable."""
     tree = parse_mock_formula(TIERED)
@@ -83,19 +92,19 @@ def test_negative_unknown_function() -> None:
 def test_negative_balance_prior_ref_wrong_column() -> None:
     """C1 is not in the same column as D2, so this is not a running balance."""
     tree = parse_mock_formula("=C1+B2-C2")
-    _assert_unverified(match_formula("n8", "D2", tree), "n8")
+    _assert_read_aloud(match_formula("n8", "D2", tree), "n8", "Calculates (C1 plus B2) minus C2.")
 
 
 def test_negative_balance_not_row_above() -> None:
     """D1 referenced from D5 is not the row above."""
     tree = parse_mock_formula("=D1+B5-C5")
-    _assert_unverified(match_formula("n9", "D5", tree), "n9")
+    _assert_read_aloud(match_formula("n9", "D5", tree), "n9", "Calculates (D1 plus B5) minus C5.")
 
 
 def test_negative_self_reference_same_cell() -> None:
     """A reference to its own cell is circular, not a running balance."""
     tree = parse_mock_formula("=D2+B2")
-    _assert_unverified(match_formula("n10", "D2", tree), "n10")
+    _assert_read_aloud(match_formula("n10", "D2", tree), "n10", "Calculates D2 plus B2.")
 
 
 def test_determinism_byte_identical_output() -> None:

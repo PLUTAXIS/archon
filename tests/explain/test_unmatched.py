@@ -32,17 +32,17 @@ def test_ranked_by_count_descending() -> None:
         _items(
             [
                 "=MEDIAN(A1:A10)",
-                "=B2*1.2",
+                "=AVERAGE(B2:B9)",
                 "=MEDIAN(B1:B50)",
                 "=MAX(B2,C2)",
                 "=MEDIAN(C1:C5)",
-                "=D2*1.5",
+                "=AVERAGE(D2:D9)",
             ]
         )
     )
     assert result == (
         ShapeCount("MEDIAN(<range>)", 3),
-        ShapeCount("(<ref>*<num>)", 2),
+        ShapeCount("AVERAGE(<range>)", 2),
         ShapeCount("MAX(<ref>,<ref>)", 1),
     )
 

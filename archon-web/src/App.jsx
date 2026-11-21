@@ -38,8 +38,57 @@ function Icon({ name, size = 20 }) {
   return <svg {...common}><circle cx="12" cy="12" r="9" /></svg>
 }
 
+const FLAG_TEXT = {
+  APPROX_LOOKUP_DEFAULT: 'Lookup falls back to approximate match because no match type is given',
+  APPROX_LOOKUP: 'Lookup uses approximate match',
+  ERROR_SUPPRESSED: 'Errors are hidden and replaced with a fixed value',
+  VOLATILE_FUNCTION: 'Recalculates on every change',
+  EMBEDDED_CONSTANT: 'Business number typed into the formula, not an input cell',
+  RUNNING_BALANCE: 'Running balance: one wrong row carries forward',
+  UNVERIFIED_FORMULA: 'Not explained yet',
+}
+
+function flagText(flag) {
+  const levels = flag.match(/^NESTED_IF_DEPTH_(\d+)$/)
+  if (levels) return `${levels[1]} nested IF levels`
+  return FLAG_TEXT[flag] ?? flag
+}
+
+function ScoreCard({ card }) {
+  return (
+    <div className="result-block scorecard">
+      <div className="scorecard-total">
+        <span className="scorecard-label">Workbook risk</span>
+        <strong>{card.score}<small>/100</small></strong>
+        <span className={`scorecard-band band-${card.band.toLowerCase()}`}>{card.band}</span>
+      </div>
+      <div className="scorecard-axes">
+        {card.axes.map((axis) => (
+          <div className="scorecard-axis" key={axis.id}>
+            <div className="scorecard-axis-head">
+              <span>{axis.title} <small>· weight {axis.weight}%</small></span>
+              <strong>{axis.score}</strong>
+            </div>
+            <div className="scorecard-bar" role="img" aria-label={`${axis.title}: ${axis.score} out of 100`}>
+              <span style={{ width: `${axis.score}%` }} />
+            </div>
+            {axis.contributions.length > 0 ? (
+              <ul>
+                {axis.contributions.map((c) => (
+                  <li key={c.signal}>{c.label[0].toUpperCase() + c.label.slice(1)}: {c.count} <span>+{c.points}</span></li>
+                ))}
+                {axis.capped && <li className="scorecard-capped">Capped at 100</li>}
+              </ul>
+            ) : <p>Nothing found.</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AuditReport({ analysis }) {
-  const { summary, bugs, cycles, report, graph } = analysis
+  const { summary, bugs, cycles, report, graph, scorecard } = analysis
   const [focus, setFocus] = useState(null)
   const mapRef = useRef(null)
   const section = (kind) => report.sections.find((s) => s.kind === kind)?.entries ?? []
@@ -49,6 +98,8 @@ function AuditReport({ analysis }) {
 
   return (
     <>
+      {scorecard && <ScoreCard card={scorecard} />}
+
       <div className="metric-grid">
         <div className="metric-card">
           <span className="metric-icon"><Icon name="activity" size={18} /></span>
@@ -125,27 +176,28 @@ function AuditReport({ analysis }) {
       )}
 
       <div className="result-block">
-        <div className="block-heading"><h4>Risk ranking</h4><span>{risky.length} flagged</span></div>
+        <div className="block-heading"><h4>Risky formulas</h4><span>{risky.length} flagged · highest first</span></div>
         {risky.length ? (
-          <div className="formula-list">
+          <div className="explain-list">
             {risky.map((e) => (
-              <div className="formula-row" key={e.node_id}>
-                <div className="formula-location"><strong>{e.risk_score}/100</strong><span>{e.risk_flags.join(', ')}</span></div>
-                <code>{e.node_id}</code>
+              <div className="explain-row" key={e.node_id}>
+                <div className="explain-meta"><strong>{e.risk_score}/100</strong><code>{e.node_id}</code></div>
+                <p className="explain-flags">{e.risk_flags.map(flagText).join(' · ')}</p>
+                <p>{e.plain_english}</p>
               </div>
             ))}
           </div>
-        ) : <p className="empty-state">No risk flags raised.</p>}
+        ) : <p className="empty-state">No risky formula patterns found.</p>}
       </div>
 
       <div className="result-block">
         <div className="block-heading"><h4>What the formulas do</h4><span>{explained.length} explained · {unverified.length} unverified</span></div>
         {explained.length ? (
-          <div className="formula-list">
+          <div className="explain-list">
             {explained.map((e) => (
-              <div className="formula-row" key={e.node_id}>
-                <div className="formula-location"><strong>{e.node_id}</strong></div>
-                <span>{e.plain_english}</span>
+              <div className="explain-row" key={e.node_id}>
+                <div className="explain-meta"><code>{e.node_id}</code></div>
+                <p>{e.plain_english}</p>
               </div>
             ))}
           </div>

@@ -24,6 +24,7 @@ patterns:
     args:
       - {kind: range, as: range}
     template: "Sum of {range}."
+    phrase: "the total of {range}"
   - id: rounding
     idiom: rounding
     shape: call_args
@@ -32,3 +33,4 @@ patterns:
       - {kind: ref, as: value}
       - {kind: int, as: digits}
     template: "{value} rounded to {digits} decimal places."
+    phrase: "{value} rounded to {digits} decimal places"

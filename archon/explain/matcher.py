@@ -22,6 +22,7 @@ from archon.explain.formula_ast import (
     Num,
     Range,
     Ref,
+    parse_mock_formula,
     prior_row_address,
     to_formula_text,
 )
@@ -161,8 +162,8 @@ def _col_number(letters: str) -> int:
 
 
 def _range_dims(text: str) -> tuple[int, int] | None:
-    """(rows, columns) of a range such as F1:H20, or None if unreadable."""
-    found = _RANGE.match(text)
+    """(rows, columns) of a range such as F1:H20 or Inputs!F1:H20, or None if unreadable."""
+    found = _RANGE.match(text.rsplit("!", 1)[-1])
     if found is None:
         return None
     col1, row1, col2, row2 = found.groups()
@@ -232,17 +233,96 @@ def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
     return captured
 
 
+_ARITH_WORDS = {"+": "plus", "-": "minus", "*": "multiplied by", "/": "divided by"}
+# Numbers that are structure, not business assumptions (x*1, 1-rate, /100).
+_TRIVIAL_NUMBERS = frozenset({"0", "1", "100"})
+
+
+def _phrase(node: Node, embedded: list[str], constants: list[str]) -> str | None:
+    """Read an arithmetic tree aloud, exactly; None if any part is not representable.
+
+    Function calls are allowed only where a call_args pattern with a `phrase`
+    matches them, so nothing is paraphrased that the matcher can't verify.
+    """
+    if isinstance(node, Num):
+        if node.text.lstrip("-") not in _TRIVIAL_NUMBERS:
+            constants.append(node.text)
+        return node.text
+    if isinstance(node, Ref):
+        return node.address
+    if isinstance(node, BinOp):
+        word = _ARITH_WORDS.get(node.op)
+        if word is None:
+            return None
+        sides = []
+        for side in (node.left, node.right):
+            text = _phrase(side, embedded, constants)
+            if text is None:
+                return None
+            sides.append(f"({text})" if isinstance(side, BinOp) else text)
+        return f"{sides[0]} {word} {sides[1]}"
+    if isinstance(node, Call):
+        for spec in load_patterns():
+            if "phrase" in spec and spec["shape"] == "call_args":
+                captured = _match_call(node, "", spec)
+                if captured is not None:
+                    embedded.append(spec["id"])
+                    return str(spec["phrase"]).format(**captured)
+    return None
+
+
+def _match_arithmetic(tree: Node, _cell: str, spec: Spec) -> Captured | None:
+    """Any + - * / expression of refs, numbers and known functions, read aloud.
+
+    spec["constants"] selects formulas with (true) or without (false) a
+    non-trivial number typed into them, so each gets its own risk flag.
+    """
+    if not (isinstance(tree, BinOp) and tree.op in _ARITH_WORDS):
+        return None
+    embedded: list[str] = []
+    constants: list[str] = []
+    expression = _phrase(tree, embedded, constants)
+    if expression is None or bool(constants) != spec["constants"]:
+        return None
+    return {
+        "expression": expression,
+        "constants": ", ".join(constants),
+        "embedded": ",".join(embedded),
+    }
+
+
+def _match_single_ref(tree: Node, _cell: str, spec: Spec) -> Captured | None:
+    """The formula is just a link to one cell (=Inputs!B2)."""
+    return {spec["captures"][0]: tree.address} if isinstance(tree, Ref) else None
+
+
 SHAPES: dict[str, Callable[[Node, str, Spec], Captured | None]] = {
     "if_ladder": _match_ladder,
     "additive_chain": _match_chain,
     "binary_refs": _match_binary,
     "call_args": _match_call,
+    "arithmetic": _match_arithmetic,
+    "single_ref": _match_single_ref,
 }
 
 
+def _spoken(formula_text: str) -> str:
+    """Formula text read aloud ("B2/C2" -> "B2 divided by C2") when exact, else as is."""
+    try:
+        return _phrase(parse_mock_formula(formula_text), [], []) or formula_text
+    except ValueError:
+        return formula_text
+
+
 def _render(spec: Spec, captured: Captured) -> str:
-    """Fill the pattern's sentence template; empty optional clauses vanish."""
+    """Fill the pattern's sentence template; empty optional clauses vanish.
+
+    Captures listed under `speak` are read aloud in the sentence only; the
+    evidence keeps the exact formula text.
+    """
     context: dict[str, str] = dict(captured)
+    for key in spec.get("speak", []):
+        context[key] = _spoken(captured[key])
     for key, clause in sorted(spec.get("clauses", {}).items()):
         context[f"{key}_clause"] = clause.format(**captured) if captured[key] else ""
     return spec["template"].format(**context)

@@ -52,8 +52,9 @@ def test_explanations_hold_matched_only_sorted_by_node_id() -> None:
 
 def test_risk_section_sorted_by_score_desc_then_node_id() -> None:
     doc = compose_report(WB, _records())
-    # n3 unverified=20, n2 error=15, n4 volatile=15, n1 zero (excluded)
-    assert _by_kind(doc)["risk"] == ["n3", "n2", "n4"]
+    # n2 error=15, n4 volatile=15; n1 zero and n3 unverified are excluded
+    # (n3 is listed in the unverified appendix instead)
+    assert _by_kind(doc)["risk"] == ["n2", "n4"]
 
 
 def test_unverified_appendix_holds_unverified_only() -> None:

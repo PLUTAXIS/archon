@@ -7,6 +7,7 @@ patterns:
       - {kind: expr, as: expression}
       - {kind: leaf, as: fallback}
     template: "Evaluates {expression} and replaces any error with {fallback}."
+    speak: [expression]
   - id: volatile_now
     idiom: volatile_function
     shape: call_args

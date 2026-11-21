@@ -75,6 +75,26 @@ class RunAuditTests(unittest.TestCase):
     def test_deterministic_and_order_independent(self):
         self.assertEqual(run_audit(list(reversed(_rows())), WID), self.out)
 
+    def test_explanations_name_cells_by_their_headers(self):
+        entries = {e["node_id"]: e for s in self.out["report"]["sections"] for e in s["entries"]}
+        self.assertEqual(
+            entries["S!C2:C11"]["plain_english"], "Amount: product of Price (A2) and Qty (B2)."
+        )
+
+    def test_unexplained_formulas_are_not_ranked_as_risks(self):
+        sections = {s["kind"]: s["entries"] for s in self.out["report"]["sections"]}
+        appendix = {e["node_id"] for e in sections["unverified_appendix"]}
+        self.assertFalse(appendix & {e["node_id"] for e in sections["risk"]})
+
+    def test_scorecard_reflects_the_findings(self):
+        card = self.out["scorecard"]
+        structural = card["axes"][0]["contributions"]
+        self.assertIn({"signal": "override_bug", "label": "hardcoded values typed over a copied formula",
+                       "count": 1, "points": 25}, structural)
+        self.assertIn({"signal": "cycle", "label": "circular references", "count": 1, "points": 20},
+                      structural)
+        self.assertGreater(card["score"], 0)
+
 
 class GraphContractTests(unittest.TestCase):
     def setUp(self):

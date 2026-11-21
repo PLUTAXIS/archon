@@ -34,8 +34,8 @@ def compose_report(
 ) -> ReportDocument:
     """Compose records into a deterministic three-section report.
 
-    Sections: explanations (matched), risk (score > 0, highest first),
-    unverified appendix. Input order never affects output. Raises
+    Sections: explanations (matched), risk (matched with score > 0, highest
+    first), unverified appendix. Input order never affects output. Raises
     ValueError on duplicate node ids.
     """
     ordered = sorted(records, key=lambda r: r.node_id)
@@ -52,8 +52,10 @@ def compose_report(
     scored = [(r, score_record(r)) for r in ordered]
     explanations = [_entry(r, s) for r, s in scored if r.status == "matched"]
     appendix = [_entry(r, s) for r, s in scored if r.status == "unverified"]
+    # Unexplained formulas live in the appendix: "we couldn't read it" is not
+    # ranked above real findings such as approximate lookups.
     risky = sorted(
-        (_entry(r, s) for r, s in scored if s.score > 0),
+        (_entry(r, s) for r, s in scored if s.score > 0 and r.status == "matched"),
         key=lambda e: (-e.risk_score, e.node_id),
     )
 

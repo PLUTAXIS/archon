@@ -15,6 +15,7 @@ or a hardcoded value as text. Blank content is ignored. vba is a list of
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -39,11 +40,13 @@ from archon.contracts.graph import Cycle, DagGraph, Edge, Node, Stats
 from archon.explain.composer import compose_report
 from archon.explain.formula_ast import Node as ExplainNode
 from archon.explain.from_formula import explain_tree
+from archon.explain.labels import Labels
 from archon.explain.matcher import match_formula
 from archon.explain.risk import score_record, to_contract_risk
 from archon.explain.unmatched import rank_unmatched
 from archon.formula.r1c1 import parse_address, to_r1c1
 from archon.graph.graph_builder import build_graph
+from archon.risk.scorecard import score_workbook
 
 DOWNSTREAM_SAMPLE = 10
 CellKey = tuple[str, str]  # (sheet, address); VBA nodes use ("", node id)
@@ -75,25 +78,6 @@ def _adjacency(g: nx.DiGraph) -> DependencyGraph:
     return dict(adj)
 
 
-def _headers(rows: list[Row]) -> dict[tuple[str, str], str]:
-    """Row-1 text labels per (sheet, column letters), used as business headers."""
-    out: dict[tuple[str, str], str] = {}
-    for sheet, addr, content in rows:
-        text = content.strip()
-        row, _ = parse_address(addr)
-        if row == 1 and text and not text.startswith("=") and not _is_number(text):
-            out[(sheet, addr.rstrip("0123456789").replace("$", "").upper())] = text
-    return out
-
-
-def _is_number(text: str) -> bool:
-    try:
-        float(text)
-    except ValueError:
-        return False
-    return True
-
-
 def _cluster_ids(clusters: Clusters) -> dict[ClusterKey, str]:
     """Readable, unique node id per cluster: Sheet!C2:C501 (hash suffix only on collision)."""
     ids: dict[ClusterKey, str] = {}
@@ -113,13 +97,14 @@ def _explain(
     clusters: Clusters,
     ids: dict[ClusterKey, str],
     formulas: dict[CellKey, str],
-    headers: dict[tuple[str, str], str],
+    labels: Labels,
 ) -> tuple[list[ExplanationRecord], list[tuple[str, str, ExplainNode]]]:
-    """One explanation per cluster, using its first member as the representative."""
+    """One explanation per cluster, using its first member as the representative,
+    with every cell named by its business label ("Price (A2)")."""
     records: list[ExplanationRecord] = []
     parsed: list[tuple[str, str, ExplainNode]] = []
     for key, members in sorted(clusters.items()):
-        sheet, col, _cid = key
+        sheet, _col, _cid = key
         node_id, first = ids[key], members[0][1]
         try:
             tree = explain_tree(formulas[(sheet, first)])
@@ -127,7 +112,17 @@ def _explain(
             records.append(ExplanationRecord(node_id=node_id, status="unverified", confidence=0.0))
             continue
         parsed.append((node_id, first, tree))
-        records.append(match_formula(node_id, first, tree, headers.get((sheet, col))))
+        one_off = len(members) == 1  # one-off cells are named by their row label
+        own = labels.cell(sheet, first, prefer_row=one_off)
+        record = match_formula(node_id, first, tree, own)
+        if record.status == "matched" and record.plain_english:
+            raw = record.plain_english
+            text = labels.relabel(raw, sheet, prefer_row=one_off)
+            if own:
+                starts_with_word = raw[:2].isalpha() and raw[1].islower()
+                text = f"{own}: {text[0].lower() + text[1:] if starts_with_word else text}"
+            record = record.model_copy(update={"plain_english": text, "business_concept": own})
+        records.append(record)
     return records, parsed
 
 
@@ -168,7 +163,7 @@ def _dag(
     clusters: Clusters,
     ids: dict[ClusterKey, str],
     formulas: dict[CellKey, str],
-    headers: dict[tuple[str, str], str],
+    labels: Labels,
     records: list[ExplanationRecord],
     unparsed: list[Row],
     ledger: list[BugLedgerEntry],
@@ -192,7 +187,8 @@ def _dag(
         runs = contiguous_runs([r for r, _ in members])
         nodes[node_id] = Node(
             id=node_id, kind="cluster", sheet=sheet, r1c1=r1c1, anchor=anchor,
-            member_count=len(members), ast_hash=cid, header=headers.get((sheet, col)),
+            member_count=len(members), ast_hash=cid,
+            header=labels.cell(sheet, anchor, prefer_row=len(members) == 1),
             member_ranges=[f"{col}{a}" if a == b else f"{col}{a}:{col}{b}" for a, b in runs],
             risk=risk.get(node_id),
         )
@@ -200,7 +196,10 @@ def _dag(
     flagged = {(b.sheet, b.address): "" for b in ledger}
     flagged.update({(s, a): c for s, a, c in unparsed})
     for (sheet, addr), text in flagged.items():
-        nodes[f"{sheet}!{addr}"] = Node(id=f"{sheet}!{addr}", kind="cell", sheet=sheet, r1c1=text, anchor=addr)
+        nodes[f"{sheet}!{addr}"] = Node(
+            id=f"{sheet}!{addr}", kind="cell", sheet=sheet, r1c1=text, anchor=addr,
+            header=labels.cell(sheet, addr, prefer_row=False),
+        )
 
     def node_of(key: CellKey) -> str:
         sheet, addr = key
@@ -220,7 +219,8 @@ def _dag(
         old = nodes.get(node_id)
         nodes[node_id] = Node(
             id=node_id, kind="input", sheet=sheet, r1c1="", anchor=f"{col}:{col}",
-            header=headers.get((sheet, col)), member_count=(old.member_count or 0) + 1 if old else 1,
+            header=old.header if old else labels.cell(sheet, addr, prefer_row=False),
+            member_count=(old.member_count or 0) + 1 if old else 1,
         )
         return node_id
 
@@ -265,16 +265,60 @@ def _parse_label(label: str) -> CellKey:
     return (sheet, addr)
 
 
+_ON_ERROR_RESUME = re.compile(r"^\s*On\s+Error\s+Resume\s+Next\b", re.IGNORECASE | re.MULTILINE)
+
+
+def _scorecard_counts(
+    bugs: list[BugLedgerEntry],
+    cycles: list[dict[str, Any]],
+    records: list[ExplanationRecord],
+    unparsed: list[Row],
+    vba: Sequence[dict[str, str]],
+    g: nx.DiGraph,
+    dag: DagGraph,
+    context: dict[str, int],
+) -> dict[str, int]:
+    """Signal counts for the workbook scorecard (archon/risk/scorecard.yaml)."""
+    sheet_of = {n.id: n.sheet for n in dag.nodes}
+    blocks = len(records) + len(unparsed)
+    unexplained = sum(r.status == "unverified" for r in records) + len(unparsed)
+    vba_edges = [v for _u, v, d in g.edges(data=True) if d["label"] == "vba_write"]
+    return {
+        "override_bug": len(bugs),
+        "cycle": len(cycles),
+        "flagged_block_score": sum(score_record(r).score for r in records if r.status == "matched"),
+        "vba_module": len(vba),
+        "vba_100_lines": sum(len(m["code"].splitlines()) for m in vba) // 100,
+        "vba_write": sum(not v.startswith("VBA_UNKNOWN:") for v in vba_edges),
+        "vba_dynamic_write": sum(v.startswith("VBA_UNKNOWN:") for v in vba_edges),
+        "vba_error_suppression": sum(len(_ON_ERROR_RESUME.findall(m["code"])) for m in vba),
+        "external_link": context.get("external_links", 0),
+        "cross_sheet_link": sum(
+            e.origin == "formula" and sheet_of[e.source] != sheet_of[e.target] for e in dag.edges
+        ),
+        "hidden_sheet": context.get("hidden_sheets", 0),
+        "very_hidden_sheet": context.get("very_hidden_sheets", 0),
+        "unexplained_pct": round(100 * unexplained / blocks) if blocks else 0,
+    }
+
+
 def run_audit(
-    rows: Iterable[Row], workbook_id: UUID, vba: Sequence[dict[str, str]] = ()
+    rows: Iterable[Row],
+    workbook_id: UUID,
+    vba: Sequence[dict[str, str]] = (),
+    context: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    """Run every analysis stage and return one JSON-ready result."""
+    """Run every analysis stage and return one JSON-ready result.
+
+    context carries workbook facts the cells don't show: counts of
+    hidden_sheets, very_hidden_sheets and external_links (see run_extract).
+    """
     rows = [(s, a, str(c)) for s, a, c in rows if str(c).strip()]
     clusters, constants, unparsed = cluster_cells_ast(rows)
     g = _cell_graph(rows, vba)
     graph = _adjacency(g)
     formulas = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
-    headers = _headers(rows)
+    labels = Labels(rows)
 
     bugs = _ledger(find_override_bugs(rows, clusters, constants, graph=graph))
 
@@ -290,9 +334,9 @@ def run_audit(
     cycles.sort(key=lambda c: c["members"])
 
     ids = _cluster_ids(clusters)
-    records, parsed = _explain(clusters, ids, formulas, headers)
+    records, parsed = _explain(clusters, ids, formulas, labels)
     report = compose_report(workbook_id, records, unmatched_shapes=rank_unmatched(parsed))
-    dag = _dag(workbook_id, g, clusters, ids, formulas, headers, records, unparsed, bugs, cycles, len(rows))
+    dag = _dag(workbook_id, g, clusters, ids, formulas, labels, records, unparsed, bugs, cycles, len(rows))
 
     unknown_writes = [
         {k: d[k] for k in ("module", "procedure", "line", "text", "reason")}
@@ -301,7 +345,11 @@ def run_audit(
     ]
     stats = summarise(clusters, constants)
     total_formulas = stats["formula_cells"] + len(unparsed)
+    scorecard = score_workbook(
+        _scorecard_counts(bugs, cycles, records, unparsed, vba, g, dag, context or {})
+    )
     return {
+        "scorecard": scorecard,
         "summary": {
             **stats,
             "unparsed_formulas": len(unparsed),
@@ -337,7 +385,12 @@ def run_extract(raw: RawExtract) -> dict[str, Any]:
         if c.formula or c.cached_value is not None
     ]
     vba = [{"module": m.name, "code": m.source} for m in raw.vba_modules]
-    result = run_audit(rows, raw.workbook_id, vba)
+    context = {
+        "hidden_sheets": sum(s.visibility == "hidden" for s in raw.sheets),
+        "very_hidden_sheets": sum(s.visibility == "veryHidden" for s in raw.sheets),
+        "external_links": len(raw.external_links),
+    }
+    result = run_audit(rows, raw.workbook_id, vba, context)
     result["extract"] = {
         "source": raw.source.model_dump(mode="json"),
         "sheets": [

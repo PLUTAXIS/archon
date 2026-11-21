@@ -1,0 +1,39 @@
+# Workbook risk scorecard, 0-100 (proposed, pending Wrik).
+# Axis weights are the founder dossier's: 30 / 30 / 25 / 15.
+# An axis score is the sum of (count x points) over its signals, capped at 100.
+# The workbook score is the weighted average of the four axes.
+axes:
+  structural_fragility:
+    title: Structural fragility
+    weight: 30
+    signals:
+      override_bug: {points: 25, label: "hardcoded values typed over a copied formula"}
+      cycle: {points: 20, label: "circular references"}
+      flagged_block_score: {points: 1, label: "risk points from flagged formulas (lookups, suppressed errors, typed-in numbers)"}
+  opaque_vba:
+    title: Opaque VBA automation
+    weight: 30
+    signals:
+      vba_module: {points: 5, label: "VBA modules"}
+      vba_100_lines: {points: 2, label: "hundreds of VBA lines"}
+      vba_write: {points: 10, label: "macro writes into the sheet"}
+      vba_dynamic_write: {points: 15, label: "macro writes to cells that can't be traced"}
+      vba_error_suppression: {points: 15, label: "'On Error Resume Next' statements that hide failures"}
+  lineage:
+    title: Lineage & external coupling
+    weight: 25
+    signals:
+      external_link: {points: 20, label: "links to other workbooks"}
+      cross_sheet_link: {points: 3, label: "dependencies between sheets"}
+      hidden_sheet: {points: 10, label: "hidden sheets"}
+      very_hidden_sheet: {points: 25, label: "very hidden sheets (only VBA can unhide them)"}
+  governance:
+    title: Governance & key-person exposure
+    weight: 15
+    signals:
+      unexplained_pct: {points: 1, label: "percent of formula logic no one has documented"}
+bands:
+  - {min: 75, label: Extreme}
+  - {min: 50, label: High}
+  - {min: 25, label: Moderate}
+  - {min: 0, label: Low}

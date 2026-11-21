@@ -9,6 +9,15 @@ def _run(node_id: str, cell: str, formula: str) -> ExplanationRecord:
     return match_formula(node_id, cell, parse_mock_formula(formula))
 
 
+def _assert_read_aloud(result: ExplanationRecord, node_id: str, text: str) -> None:
+    """Not the specific idiom: the general arithmetic fallback reads it exactly."""
+    assert result.node_id == node_id
+    assert result.idiom == "other"
+    assert result.evidence is not None
+    assert result.evidence.pattern_id in ("arithmetic", "arithmetic_constant")
+    assert result.plain_english == text
+
+
 def _assert_matched(
     result: ExplanationRecord,
     node_id: str,
@@ -80,15 +89,18 @@ def test_balance_still_wins_over_difference() -> None:
 
 
 def test_negative_product_of_three() -> None:
-    _assert_unverified(_run("n1", "H2", "=E2*F2*G2"), "n1")
+    _assert_read_aloud(_run("n1", "H2", "=E2*F2*G2"), "n1", "Calculates (E2 multiplied by F2) multiplied by G2.")
 
 
 def test_negative_product_with_constant() -> None:
-    _assert_unverified(_run("n2", "G2", "=E2*1.2"), "n2")
+    _assert_read_aloud(
+        _run("n2", "G2", "=E2*1.2"), "n2",
+        "Calculates E2 multiplied by 1.2; uses a number typed into the formula (1.2).",
+    )
 
 
 def test_negative_ratio_by_constant() -> None:
-    _assert_unverified(_run("n3", "D2", "=B2/100"), "n3")
+    _assert_read_aloud(_run("n3", "D2", "=B2/100"), "n3", "Calculates B2 divided by 100.")
 
 
 def test_negative_sum_two_arguments() -> None:

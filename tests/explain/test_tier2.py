@@ -42,7 +42,7 @@ def test_iferror_with_number_fallback() -> None:
     _assert_matched(
         _run("e1", "D2", "=IFERROR(B2/C2,0)"), "e1", "error_suppression",
         "error_suppression",
-        "Evaluates B2/C2 and replaces any error with 0.",
+        "Evaluates B2 divided by C2 and replaces any error with 0.",
         {"expression": "B2/C2", "fallback": "0"},
     )
 
@@ -51,7 +51,7 @@ def test_iferror_with_reference_fallback() -> None:
     _assert_matched(
         _run("e2", "D2", "=IFERROR(SUM(A1:A10),E2)"), "e2", "error_suppression",
         "error_suppression",
-        "Evaluates SUM(A1:A10) and replaces any error with E2.",
+        "Evaluates the total of A1:A10 and replaces any error with E2.",
         {"expression": "SUM(A1:A10)", "fallback": "E2"},
     )
 

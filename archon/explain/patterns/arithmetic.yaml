@@ -1,0 +1,21 @@
+# General fallbacks, tried after every specific idiom (higher priority number).
+# They read a formula aloud exactly; they never infer business meaning.
+patterns:
+  - id: link
+    priority: 80
+    idiom: other
+    shape: single_ref
+    captures: [source]
+    template: "Takes the value of {source}."
+  - id: arithmetic
+    priority: 90
+    idiom: other
+    shape: arithmetic
+    constants: false
+    template: "Calculates {expression}."
+  - id: arithmetic_constant
+    priority: 90
+    idiom: other
+    shape: arithmetic
+    constants: true
+    template: "Calculates {expression}; uses a number typed into the formula ({constants})."

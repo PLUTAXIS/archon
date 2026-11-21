@@ -7,6 +7,7 @@ rules:
   APPROX_LOOKUP: 10
   RUNNING_BALANCE: 5
   NESTED_IF_DEPTH: 5  # per IF level
+  EMBEDDED_CONSTANT: 10  # a business number typed into a formula instead of an input cell
 # pattern id -> flag (null = explicit zero-risk decision)
 pattern_flags:
   running_balance: RUNNING_BALANCE
@@ -24,3 +25,6 @@ pattern_flags:
   volatile_now: VOLATILE_FUNCTION
   volatile_today: VOLATILE_FUNCTION
   volatile_rand: VOLATILE_FUNCTION
+  link: null
+  arithmetic: null
+  arithmetic_constant: EMBEDDED_CONSTANT

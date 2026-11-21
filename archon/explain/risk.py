@@ -1,9 +1,10 @@
 """Risk scoring: pure function from ExplanationRecord to a printable score.
 
 Rules live in risk_rules.yaml (data, not code). Deterministic: sorted,
-set-free, timestamp-free. Known limitation (accepted, option A): only the
-outermost idiom is scored; a volatile/approx-lookup call nested inside
-IFERROR is invisible to a record-only scorer.
+set-free, timestamp-free. Idioms nested inside an arithmetic formula are
+scored too (the matcher records their pattern ids in captured_vars
+"embedded"). Known limitation (accepted, option A): a volatile/approx-lookup
+call nested inside IFERROR is still invisible to a record-only scorer.
 """
 
 from __future__ import annotations
@@ -91,6 +92,17 @@ def pattern_flags() -> dict[str, str | None]:
     return dict(_load_yaml()[1])
 
 
+def _embedded_pairs(record: ExplanationRecord, rules: Mapping[str, int]) -> list[tuple[str, int]]:
+    """Flags of known idioms nested inside an arithmetic formula."""
+    assert record.evidence is not None
+    pairs: list[tuple[str, int]] = []
+    for pattern_id in filter(None, record.evidence.captured_vars.get("embedded", "").split(",")):
+        flag = pattern_flags().get(pattern_id)
+        if flag is not None:
+            pairs.append((flag, rules[flag]))
+    return pairs
+
+
 def _record_flags(record: ExplanationRecord) -> list[tuple[str, int]]:
     """Derive (flag, points) pairs from one record. Never guesses."""
     rules = load_rules()
@@ -100,6 +112,7 @@ def _record_flags(record: ExplanationRecord) -> list[tuple[str, int]]:
         return pairs
     if record.evidence is None:
         raise ValueError("matched record must carry evidence (pattern_id required)")
+    pairs.extend(_embedded_pairs(record, rules))
     flag = pattern_flags().get(record.evidence.pattern_id, "")
     if flag is None:
         return pairs  # explicit zero-risk decision for this pattern
@@ -145,15 +158,16 @@ def _record_flags_with(
         return [("UNVERIFIED_FORMULA", rules["UNVERIFIED_FORMULA"])]
     if record.evidence is None:
         raise ValueError("matched record must carry evidence (pattern_id required)")
+    embedded = _embedded_pairs(record, rules)
     flag = pattern_flags().get(record.evidence.pattern_id, "")
     if flag is None:
-        return []
+        return embedded
     if flag not in rules:
         raise ValueError(f"no points defined for flag {flag!r}")
     if flag == "NESTED_IF_DEPTH":
         levels = int(record.evidence.captured_vars["bracket_count"]) - 1
-        return [(f"NESTED_IF_DEPTH_{levels}", rules[flag] * levels)]
-    return [(flag, rules[flag])]
+        return [*embedded, (f"NESTED_IF_DEPTH_{levels}", rules[flag] * levels)]
+    return [*embedded, (flag, rules[flag])]
 
 
 def format_components(result: RiskResult) -> str:
