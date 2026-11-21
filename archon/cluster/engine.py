@@ -8,7 +8,6 @@ Input rows are (sheet, address, content) where content is either a formula
 """
 
 from __future__ import annotations
-from archon.parser.kpi import ParseKPI
 
 import json
 from collections import defaultdict
@@ -16,11 +15,12 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import blake3
+
 from archon.formula.ast import BinOp, Func, Lit, Node, Ref, UnaryOp
 from archon.formula.parser import ParseError, parse
 from archon.formula.r1c1 import num_to_col, parse_address, to_r1c1, to_r1c1_ast
-
-import blake3
+from archon.parser.kpi import ParseKPI
 
 Row = tuple[str, str, str]
 ClusterKey = tuple[str, str, str]

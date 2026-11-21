@@ -139,7 +139,7 @@ def find_override_bugs(
         if not candidates:
             continue
         key, members, _lo, _hi = max(candidates, key=lambda c: len(c[1]))
-        nearest_row, nearest_addr = min(members, key=lambda m: abs(m[0] - row))
+        _nearest_row, nearest_addr = min(members, key=lambda m: abs(m[0] - row))
         example_formula = formula_lookup.get((sheet, nearest_addr), "")
 
         if graph is not None:

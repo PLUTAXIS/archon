@@ -1,0 +1,29 @@
+# One-command demo: docker compose up --build, then open http://localhost:8080
+#
+# The api container (which reads the uploaded workbooks) sits only on the
+# "backend" network, which is internal: it has no route to the internet, so
+# workbook data cannot leave this machine. Only the web container (static
+# files + a proxy to the api) publishes a port, and only on localhost.
+services:
+  api:
+    build: .
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]            # uploads are written here briefly, then deleted
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  web:
+    build: ./archon-web
+    depends_on: [api]
+    networks: [backend, frontend]
+    ports: ["127.0.0.1:8080:8080"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+networks:
+  backend:
+    internal: true
+  frontend: {}

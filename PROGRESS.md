@@ -1,5 +1,15 @@
 # Plutaxis - Progress and Context (updated 2026-10-31)
 
+> **Current entrypoints (2026-11-21).** The paths in the sections below are historical.
+> Use these instead; nothing should be run from old root copies:
+> - Scrub a client file: `python -m archon.scrubber.scrubber MyFile.xlsm`
+> - Audit a workbook (CLI): `python run_pipeline.py MyFile.xlsm -o audit.json`
+> - Coverage, timing and determinism on real workbooks: `python scripts/benchmark.py a.xlsm b.xlsm`
+> - Demo (API + web, no outbound network): `docker compose up --build`, then http://localhost:8080
+> - Graph builder: `archon/graph/graph_builder.py` (called by `archon/pipeline.py`)
+> - Ingestion: `archon/ingest/xlsx.py` (Contract A). Saba's drop-folder tools moved to
+>   `archon/ingest/ingestion_core.py` and `archon/ingest/watcher.py`.
+
 Overall progress: about 22% (my own estimate, not measured).
 Rough split: scrubber v1 done, graph builder done, Docker VPC 0%, lead generation 0%,
 real-Excel and real-data testing 0%, integration with teammates' pieces 0%.

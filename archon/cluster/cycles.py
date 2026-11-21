@@ -99,7 +99,7 @@ def find_cycles(graph: DependencyGraph) -> list[Cycle]:
 
     all_nodes: list[CellId] = []
     seen_nodes: set[CellId] = set()
-    for node in graph.keys():
+    for node in graph:
         if node not in seen_nodes:
             seen_nodes.add(node)
             all_nodes.append(node)

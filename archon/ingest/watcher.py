@@ -7,7 +7,7 @@ import uuid
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ingestion_core import (
+from archon.ingest.ingestion_core import (
     analyze_workbook_structure,
     extract_access_db,
     extract_formulas,

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import './App.css'
+import DependencyMap from './components/DependencyMap'
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -38,7 +39,9 @@ function Icon({ name, size = 20 }) {
 }
 
 function AuditReport({ analysis }) {
-  const { summary, bugs, cycles, report } = analysis
+  const { summary, bugs, cycles, report, graph } = analysis
+  const [focus, setFocus] = useState(null)
+  const mapRef = useRef(null)
   const section = (kind) => report.sections.find((s) => s.kind === kind)?.entries ?? []
   const risky = section('risk')
   const explained = section('explanations')
@@ -69,7 +72,7 @@ function AuditReport({ analysis }) {
         {bugs.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>ID</th><th>Cell</th><th>Typed value</th><th>Expected formula (R1C1)</th><th>Cells affected</th><th>Severity</th></tr></thead>
+              <thead><tr><th>ID</th><th>Cell</th><th>Typed value</th><th>Expected formula (R1C1)</th><th>Cells affected</th><th>Severity</th><th className="no-print"><span className="sr-only">Map</span></th></tr></thead>
               <tbody>
                 {bugs.map((b) => (
                   <tr key={b.bug_id}>
@@ -79,12 +82,29 @@ function AuditReport({ analysis }) {
                     <td><code>{b.expected_r1c1}</code></td>
                     <td title={b.downstream_sample.join(', ')}>{b.downstream_node_count}</td>
                     <td>{b.severity}/5</td>
+                    <td className="no-print">
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => { setFocus(`${b.sheet}!${b.address}`); mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }}
+                      >
+                        Show on map
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : <p className="empty-state">No hardcoded values found inside copied formula ranges.</p>}
+      </div>
+
+      <div className="result-block no-print" ref={mapRef}>
+        <div className="block-heading">
+          <h4>Dependency map</h4>
+          <span>{graph.stats.nodes_out.toLocaleString()} blocks from {graph.stats.cells_in.toLocaleString()} cells · click a block for its formula</span>
+        </div>
+        <DependencyMap graph={graph} focus={focus} onFocus={setFocus} />
       </div>
 
       {cycles.length > 0 && (
@@ -140,6 +160,53 @@ function AuditReport({ analysis }) {
   )
 }
 
+function ExtractSummary({ extract, summary }) {
+  const hidden = extract.sheets.filter((s) => s.visibility !== 'visible')
+  // very hidden sheets already appear in `hidden`; don't list them twice
+  const warnings = extract.exceptions.filter((w) => w.code !== 'E_VERY_HIDDEN_SHEET')
+  return (
+    <>
+      <div className="metric-grid">
+        <div className="metric-card">
+          <span className="metric-icon"><Icon name="sheet" size={18} /></span>
+          <strong>{extract.sheets.length}</strong>
+          <span>Worksheets{hidden.length ? ` (${hidden.length} hidden)` : ''}</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-icon"><span className="fx-small">ƒx</span></span>
+          <strong>{extract.formula_count.toLocaleString()}</strong>
+          <span>Formulas in {extract.cell_count.toLocaleString()} cells</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-icon"><Icon name="file" size={18} /></span>
+          <strong>{extract.vba_modules.length}</strong>
+          <span>VBA modules{summary.vba_dynamic_writes ? ` · ${summary.vba_dynamic_writes} untraceable writes` : ''}</span>
+        </div>
+      </div>
+
+      {(hidden.length > 0 || warnings.length > 0) && (
+        <div className="result-block">
+          <div className="block-heading"><h4>File-level findings</h4><span>{hidden.length + warnings.length} flagged</span></div>
+          <div className="formula-list">
+            {hidden.map((s) => (
+              <div className="formula-row" key={`sheet-${s.name}`}>
+                <div className="formula-location"><strong>{s.visibility === 'veryHidden' ? 'Very hidden sheet' : 'Hidden sheet'}</strong><span>{s.dimensions}</span></div>
+                <code>{s.name}</code>
+              </div>
+            ))}
+            {warnings.map((w, i) => (
+              <div className="formula-row" key={`warn-${i}`}>
+                <div className="formula-location"><strong>{w.code}</strong><span>{w.detail}</span></div>
+                <code>{w.sheet ?? ''}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function App() {
   const inputRef = useRef(null)
   const [file, setFile] = useState(null)
@@ -154,10 +221,10 @@ function App() {
     setResult(null)
     setError('')
 
-    if (!nextFile.name.toLowerCase().endsWith('.xlsx')) {
+    if (!/\.(xlsx|xlsm)$/i.test(nextFile.name)) {
       setFile(null)
       setStatus('error')
-      setError('Please select an Excel workbook with the .xlsx extension.')
+      setError('Please select an Excel workbook (.xlsx or .xlsm).')
       return
     }
 
@@ -256,7 +323,7 @@ function App() {
             </a>
             <div className="hero-note">
               <Icon name="check" size={15} />
-              XLSX files up to 20 MB
+              .xlsx and .xlsm up to 20 MB
               <span className="note-divider" />
               No spreadsheet edits
             </div>
@@ -314,7 +381,7 @@ function App() {
                 ref={inputRef}
                 className="file-input"
                 type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
                 onChange={(event) => chooseFile(event.target.files?.[0])}
                 aria-label="Choose an Excel workbook"
               />
@@ -325,7 +392,7 @@ function App() {
               <button className="browse-button" type="button" onClick={() => inputRef.current?.click()}>
                 {file ? 'Choose another file' : 'Browse files'}
               </button>
-              <div className="file-hint">SUPPORTED FORMAT: .XLSX <span>•</span> MAXIMUM SIZE: 20 MB</div>
+              <div className="file-hint">SUPPORTED: .XLSX, .XLSM <span>•</span> MAXIMUM SIZE: 20 MB</div>
             </div>
 
             {file && status !== 'success' && (
@@ -362,74 +429,17 @@ function App() {
                   <div>
                     <div className="success-label"><Icon name="check" size={15} /> AUDIT COMPLETE</div>
                     <h3>{result.filename}</h3>
-                    <p>{result.scan_complete ? 'Workbook scan completed.' : 'Partial scan completed due to the scan limit.'}</p>
+                    <p>Formulas, dependencies and VBA macros analysed.</p>
                   </div>
-                  <button className="text-button" type="button" onClick={reset}>New workbook</button>
-                </div>
-
-                <div className="metric-grid">
-                  <div className="metric-card">
-                    <span className="metric-icon"><Icon name="sheet" size={18} /></span>
-                    <strong>{result.sheet_count}</strong>
-                    <span>Worksheets</span>
-                  </div>
-                  <div className="metric-card">
-                    <span className="metric-icon"><Icon name="activity" size={18} /></span>
-                    <strong>{result.cells_scanned.toLocaleString()}</strong>
-                    <span>Cells scanned</span>
-                  </div>
-                  <div className="metric-card">
-                    <span className="metric-icon"><span className="fx-small">ƒx</span></span>
-                    <strong>{result.formula_count.toLocaleString()}</strong>
-                    <span>Formulas found</span>
+                  <div className="result-actions no-print">
+                    <button className="text-button" type="button" onClick={() => window.print()}>Download PDF</button>
+                    <button className="text-button" type="button" onClick={reset}>New workbook</button>
                   </div>
                 </div>
 
-                {result.analysis && <AuditReport analysis={result.analysis} />}
+                <ExtractSummary extract={result.analysis.extract} summary={result.analysis.summary} />
 
-                <div className="result-block">
-                  <h4>Worksheet overview</h4>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Worksheet</th><th>Dimensions</th><th>Rows</th><th>Columns</th></tr></thead>
-                      <tbody>
-                        {result.sheets.map((sheet) => (
-                          <tr key={sheet.name}>
-                            <td>{sheet.name}</td>
-                            <td><code>{sheet.dimensions}</code></td>
-                            <td>{sheet.max_row.toLocaleString()}</td>
-                            <td>{sheet.max_column.toLocaleString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="result-block">
-                  <div className="block-heading">
-                    <h4>Formula samples</h4>
-                    <span>{result.formula_samples.length} shown</span>
-                  </div>
-                  {result.formula_samples.length ? (
-                    <div className="formula-list">
-                      {result.formula_samples.map((sample, index) => (
-                        <div className="formula-row" key={`${sample.sheet}-${sample.cell}-${index}`}>
-                          <div className="formula-location">
-                            <strong>{sample.cell}</strong>
-                            <span>{sample.sheet}</span>
-                          </div>
-                          <code>{sample.formula}</code>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="empty-state">No formulas were found in the scanned cells.</p>
-                  )}
-                  {result.formula_samples_truncated && (
-                    <p className="result-footnote">Only the first 500 formula samples are displayed.</p>
-                  )}
-                </div>
+                <AuditReport analysis={result.analysis} />
 
                 {result.limitations?.length > 0 && (
                   <div className="limitations">
@@ -450,7 +460,7 @@ function App() {
               <span className="step-number">01</span>
               <div className="step-icon"><Icon name="upload" size={22} /></div>
               <h3>Upload</h3>
-              <p>Select an `.xlsx` workbook from your device. Your original file stays unchanged.</p>
+              <p>Select an .xlsx or .xlsm workbook from your device. Your original file stays unchanged.</p>
             </article>
             <article className="step-card">
               <span className="step-number">02</span>

@@ -1,4 +1,4 @@
-﻿FROM python:3.12-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -20,4 +20,6 @@ USER appuser
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "uv run uvicorn archon.api.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+# Run from the pre-built venv: `uv run` may try to sync over the network, and the
+# compose demo runs this container with no outbound network at all.
+CMD ["sh", "-c", "exec uvicorn archon.api.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

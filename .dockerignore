@@ -7,3 +7,7 @@ __pycache__
 .ruff_cache
 dag_graph.json
 PROGRESS.md
+
+archon-web/node_modules
+archon-web/dist
+landing/node_modules

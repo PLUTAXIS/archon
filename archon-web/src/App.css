@@ -962,3 +962,209 @@ td {
     transition-duration: .01ms !important;
   }
 }
+
+/* ---------- Audit actions ---------- */
+.result-block + .metric-grid {
+  margin-top: 22px;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Dependency map ---------- */
+.map-wrap {
+  --map-bug: #FF5A5A;
+  --map-vba: #B79CFF;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  font-size: .72rem;
+  color: var(--text-secondary);
+}
+
+.map-key::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 1.5px solid var(--border-strong);
+}
+
+.map-key--cluster::before { border-color: var(--accent); }
+.map-key--bug::before { border-color: var(--map-bug); background: var(--map-bug); }
+.map-key--vba::before { border-color: var(--map-vba); }
+
+.map-canvas {
+  height: 520px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.map-canvas .react-flow__node.map-node {
+  width: 210px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  font-size: .7rem;
+  text-align: left;
+  transition: opacity .2s var(--ease-out);
+}
+
+.map-node-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.map-node-label strong,
+.map-node-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-node-label span {
+  color: var(--text-secondary);
+  font-family: var(--font-code);
+  font-size: .62rem;
+}
+
+.map-canvas .map-node--cluster { border-color: var(--accent); }
+.map-canvas .map-node--input { background: var(--surface); }
+.map-canvas .map-node--vba,
+.map-canvas .map-node--vba_target { border-color: var(--map-vba); border-style: dashed; }
+.map-canvas .map-node--risky { box-shadow: inset 3px 0 0 #FFB020; }
+.map-canvas .map-node--bug { border-color: var(--map-bug); box-shadow: inset 3px 0 0 var(--map-bug); }
+.map-canvas .map-node--focus { outline: 2px solid var(--map-bug); outline-offset: 3px; }
+.map-canvas .map-node--dim { opacity: .18; }
+
+.map-canvas .react-flow__node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.map-canvas .map-edge path { stroke: var(--border-strong); }
+.map-canvas .map-edge--vba_write path { stroke: var(--map-vba); stroke-dasharray: 6 4; }
+.map-canvas .map-edge--hot path { stroke: var(--map-bug); stroke-width: 2; }
+.map-canvas .map-edge--dim { opacity: .12; }
+
+.map-canvas .react-flow__controls button {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+.map-canvas .react-flow__controls button svg { fill: currentColor; }
+
+.map-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 12px 14px;
+  font-size: .75rem;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.map-detail strong { color: var(--text-primary); }
+.map-detail code { color: var(--accent); font-family: var(--font-code); }
+
+@media (max-width: 650px) {
+  .map-canvas { height: 380px; }
+}
+
+/* ---------- Print: the audit pack PDF ---------- */
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body,
+  .site-shell,
+  .workspace-card,
+  .result-block,
+  .metric-card {
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .topbar,
+  .hero,
+  .how-section,
+  .footer,
+  .section-heading,
+  .dropzone,
+  .selected-file,
+  .analyze-button,
+  .no-print {
+    display: none !important;
+  }
+
+  .workspace-section,
+  .workspace-card {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+  }
+
+  .result-block,
+  .metric-card {
+    border: 1px solid #ccc !important;
+  }
+
+  .result-block,
+  tr,
+  .formula-row,
+  .metric-card {
+    break-inside: avoid;
+  }
+
+  h3,
+  h4 {
+    color: #111 !important;
+    break-after: avoid;
+  }
+
+  th,
+  .formula-location,
+  .success-label { color: #333 !important; }
+
+  td,
+  code,
+  .block-heading span,
+  .formula-location span,
+  .metric-card span,
+  .result-footnote { color: #333 !important; }
+
+  thead { display: table-header-group; }
+  .table-wrap { overflow: visible; }
+}
