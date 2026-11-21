@@ -2,8 +2,8 @@
 
 The explain layer's own parser (formula_ast.parse_mock_formula) reads only a
 small grammar. This lets the matcher see formulas it rejects, such as
-sheet-qualified refs (Inputs!B2), unary minus and percentages. Anything the
-explain AST cannot represent (text, booleans, &, ^, named ranges) raises
+sheet-qualified refs (Inputs!B2), unary minus, percentages, text and &.
+Anything the explain AST cannot represent (booleans, ^, named ranges) raises
 ValueError, so the caller records the formula as unverified instead of
 guessing.
 """
@@ -16,7 +16,7 @@ from archon.explain import formula_ast as ex
 from archon.formula import ast as fa
 from archon.formula.parser import parse
 
-_ARITH_OR_COMPARE = frozenset({"+", "-", "*", "/", "<", "<=", ">", ">=", "=", "<>"})
+_SUPPORTED_OPS = frozenset({"+", "-", "*", "/", "&", "<", "<=", ">", ">=", "=", "<>"})
 _CELL = re.compile(r"^[A-Z]{1,3}\d+$")
 
 
@@ -35,6 +35,8 @@ def _address(ref: fa.Ref) -> str:
 
 def _convert(node: fa.Node) -> ex.Node:
     if isinstance(node, fa.Lit):
+        if isinstance(node.value, str):
+            return ex.Str(node.value)
         if isinstance(node.value, bool) or not isinstance(node.value, int | float):
             raise ValueError(f"unsupported literal: {node.value!r}")  # noqa: TRY004 - ValueError means "unverified" to callers
         return ex.Num(_number(node.value))
@@ -53,7 +55,7 @@ def _convert(node: fa.Node) -> ex.Node:
         if node.op == ":" and isinstance(node.left, fa.Ref) and isinstance(node.right, fa.Ref):
             start, end = _address(node.left), _address(node.right)
             return ex.Range(start, end.split("!")[-1])
-        if node.op not in _ARITH_OR_COMPARE:
+        if node.op not in _SUPPORTED_OPS:
             raise ValueError(f"unsupported operator: {node.op!r}")
         return ex.BinOp(node.op, _convert(node.left), _convert(node.right))
     if isinstance(node, fa.Func):

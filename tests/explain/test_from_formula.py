@@ -1,6 +1,14 @@
 import pytest
 
-from archon.explain.formula_ast import BinOp, Call, Num, Range, Ref, parse_mock_formula
+from archon.explain.formula_ast import (
+    BinOp,
+    Call,
+    Num,
+    Range,
+    Ref,
+    Str,
+    parse_mock_formula,
+)
 from archon.explain.from_formula import explain_tree
 from archon.explain.matcher import match_formula
 
@@ -24,11 +32,15 @@ def test_unary_minus_and_percent_become_numbers():
 
 @pytest.mark.parametrize(
     "formula",
-    ['="x"&A1', "=A1^2", "=TaxRate*A1", "=IF(A1,TRUE,FALSE)", "=-A1", "=SUM(A:A)", "=(("],
+    ["=A1^2", "=TaxRate*A1", "=IF(A1,TRUE,FALSE)", "=-A1", "=SUM(A:A)", "=(("],
 )
 def test_unrepresentable_formulas_raise_instead_of_guessing(formula):
     with pytest.raises(ValueError):
         explain_tree(formula)
+
+
+def test_text_and_joining_are_represented():
+    assert explain_tree('="x"&A1') == BinOp("&", Str("x"), Ref("A1"))
 
 
 def test_sheet_qualified_formula_now_gets_explained():

@@ -22,6 +22,7 @@ from archon.explain.formula_ast import (
     Num,
     Range,
     Ref,
+    Str,
     parse_mock_formula,
     prior_row_address,
     to_formula_text,
@@ -233,16 +234,82 @@ def _match_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
     return captured
 
 
-_ARITH_WORDS = {"+": "plus", "-": "minus", "*": "multiplied by", "/": "divided by"}
+_ARITH_WORDS = {"+": "plus", "-": "minus", "*": "multiplied by", "/": "divided by", "&": "followed by"}
+_COMPARE_WORDS = {
+    ">": "is greater than", "<": "is less than", ">=": "is at least",
+    "<=": "is at most", "=": "equals", "<>": "does not equal",
+}
+FUNCTIONS_FILE = Path(__file__).parent / "functions.yaml"
+_POSITIONAL = re.compile(r"\{(\d+)\}")
+
+
+@lru_cache(maxsize=1)
+def load_functions() -> dict[str, Spec]:
+    """functions.yaml, each entry normalised to {phrase, arity, structural, conditions}."""
+    raw = yaml.safe_load(FUNCTIONS_FILE.read_text(encoding="utf-8"))["functions"]
+    out: dict[str, Spec] = {}
+    for name, entry in raw.items():
+        spec = {"phrase": entry} if isinstance(entry, str) else dict(entry)
+        positions = [int(i) for i in _POSITIONAL.findall(spec["phrase"])]
+        spec["arity"] = max(positions) + 1 if positions else None
+        spec["structural"] = frozenset(spec.get("structural", ()))
+        spec["conditions"] = bool(spec.get("conditions", False))
+        out[name] = spec
+    return out
+
+
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _phrase_function(node: Call, embedded: list[str], constants: list[str]) -> str | None:
+    """IF(...) or a function listed in functions.yaml, read aloud."""
+    if node.name == "IF" and len(node.args) in (2, 3):
+        parts = [
+            _phrase(arg, embedded, constants, condition=(i == 0)) for i, arg in enumerate(node.args)
+        ]
+        if any(p is None for p in parts):
+            return None
+        # bracket an IF nested in a branch so the reader can tell the levels apart
+        parts = [
+            f"({p})" if i and isinstance(a, Call) and a.name == "IF" else p
+            for i, (p, a) in enumerate(zip(parts, node.args, strict=True))
+        ]
+        text = f"if {parts[0]}, {parts[1]}"
+        return f"{text}; otherwise {parts[2]}" if len(parts) == 3 else text
+    spec = load_functions().get(node.name)
+    if spec is None or not node.args or spec["arity"] not in (None, len(node.args)):
+        return None
+    args = []
+    for i, arg in enumerate(node.args):
+        # settings (decimals, character counts) must be whole numbers: Excel
+        # silently truncates ROUND(A1,1.5), so "1.5 decimal places" would mislead
+        if i in spec["structural"] and isinstance(arg, Num) and not arg.text.isdigit():
+            return None
+        found: list[str] = [] if i in spec["structural"] else constants  # settings, not business values
+        text = _phrase(arg, embedded, found, condition=spec["conditions"])
+        if text is None:
+            return None
+        # "(A1 multiplied by B1) rounded to 2", not "A1 multiplied by B1 rounded to 2"
+        args.append(f"({text})" if isinstance(arg, BinOp) and not spec["conditions"] else text)
+    if spec["arity"] is None:
+        return str(spec["phrase"]).format(args=_join(args))
+    return str(spec["phrase"]).format(*args)
+
+
 # Numbers that are structure, not business assumptions (x*1, 1-rate, /100).
 _TRIVIAL_NUMBERS = frozenset({"0", "1", "100"})
 
 
-def _phrase(node: Node, embedded: list[str], constants: list[str]) -> str | None:
-    """Read an arithmetic tree aloud, exactly; None if any part is not representable.
+def _phrase(
+    node: Node, embedded: list[str], constants: list[str], *, condition: bool = False
+) -> str | None:
+    """Read a formula tree aloud, exactly; None if any part is not representable.
 
-    Function calls are allowed only where a call_args pattern with a `phrase`
-    matches them, so nothing is paraphrased that the matcher can't verify.
+    Functions are read only through a call_args pattern `phrase`, IF, or an
+    entry in functions.yaml, so nothing is paraphrased that can't be verified.
+    Comparisons are read only where a condition is expected (IF, AND, OR).
+    Text is wrapped in curly quotes so cell names inside it are never relabelled.
     """
     if isinstance(node, Num):
         if node.text.lstrip("-") not in _TRIVIAL_NUMBERS:
@@ -250,8 +317,12 @@ def _phrase(node: Node, embedded: list[str], constants: list[str]) -> str | None
         return node.text
     if isinstance(node, Ref):
         return node.address
+    if isinstance(node, Range):
+        return f"{node.start}:{node.end}"
+    if isinstance(node, Str):
+        return f"“{node.text}”"
     if isinstance(node, BinOp):
-        word = _ARITH_WORDS.get(node.op)
+        word = _ARITH_WORDS.get(node.op) or (_COMPARE_WORDS.get(node.op) if condition else None)
         if word is None:
             return None
         sides = []
@@ -268,6 +339,7 @@ def _phrase(node: Node, embedded: list[str], constants: list[str]) -> str | None
                 if captured is not None:
                     embedded.append(spec["id"])
                     return str(spec["phrase"]).format(**captured)
+        return _phrase_function(node, embedded, constants)
     return None
 
 
@@ -291,6 +363,22 @@ def _match_arithmetic(tree: Node, _cell: str, spec: Spec) -> Captured | None:
     }
 
 
+def _match_phrase_call(tree: Node, _cell: str, spec: Spec) -> Captured | None:
+    """A function call (IF, AVERAGE, LEFT...) read aloud as a whole sentence."""
+    if not isinstance(tree, Call):
+        return None
+    embedded: list[str] = []
+    constants: list[str] = []
+    expression = _phrase(tree, embedded, constants)
+    if expression is None or bool(constants) != spec["constants"]:
+        return None
+    return {
+        "expression": expression[0].upper() + expression[1:],
+        "constants": ", ".join(constants),
+        "embedded": ",".join(embedded),
+    }
+
+
 def _match_single_ref(tree: Node, _cell: str, spec: Spec) -> Captured | None:
     """The formula is just a link to one cell (=Inputs!B2)."""
     return {spec["captures"][0]: tree.address} if isinstance(tree, Ref) else None
@@ -303,6 +391,7 @@ SHAPES: dict[str, Callable[[Node, str, Spec], Captured | None]] = {
     "call_args": _match_call,
     "arithmetic": _match_arithmetic,
     "single_ref": _match_single_ref,
+    "phrase_call": _match_phrase_call,
 }
 
 

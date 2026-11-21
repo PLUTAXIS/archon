@@ -20,7 +20,7 @@ def _rec(node_id: str, formula: str, cell: str = "G2") -> ExplanationRecord:
 
 def _records() -> list[ExplanationRecord]:
     return [
-        _rec("n3", "=MEDIAN(A1:A10)"),
+        _rec("n3", "=MIRR(A1:A10)"),
         _rec("n1", "=E2*F2"),
         _rec("n4", "=NOW()"),
         _rec("n2", "=IFERROR(B2/C2,0)"),
@@ -118,15 +118,15 @@ def test_unmatched_shapes_carried_and_ranked() -> None:
         WB,
         _records(),
         unmatched_shapes=[
-            ShapeCount("MIN(<ref>,<ref>)", 1),
-            ShapeCount("MEDIAN(<range>)", 3),
-            ShapeCount("MAX(<ref>,<ref>)", 1),
+            ShapeCount("NPV(<ref>,<ref>)", 1),
+            ShapeCount("MIRR(<range>)", 3),
+            ShapeCount("IRR(<ref>,<ref>)", 1),
         ],
     )
     assert [(s.shape, s.count) for s in doc.unmatched_shapes] == [
-        ("MEDIAN(<range>)", 3),
-        ("MAX(<ref>,<ref>)", 1),
-        ("MIN(<ref>,<ref>)", 1),
+        ("MIRR(<range>)", 3),
+        ("IRR(<ref>,<ref>)", 1),
+        ("NPV(<ref>,<ref>)", 1),
     ]
 
 

@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from archon.explain.formula_ast import BinOp, Node, Num, Range, Ref
+from archon.explain.formula_ast import BinOp, Node, Num, Range, Ref, Str
 from archon.explain.matcher import match_formula
 
 
@@ -24,6 +24,8 @@ def shape_key(node: Node) -> str:
         return "<ref>"
     if isinstance(node, Range):
         return "<range>"
+    if isinstance(node, Str):
+        return "<str>"
     if isinstance(node, BinOp):
         return f"({shape_key(node.left)}{node.op}{shape_key(node.right)})"
     return f"{node.name}({','.join(shape_key(a) for a in node.args)})"

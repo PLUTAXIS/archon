@@ -21,6 +21,7 @@ from archon.formula.r1c1 import parse_address
 
 Row = tuple[str, str, str]
 _ISO_MIDNIGHT = "T00:00:00"
+_QUOTED = re.compile("(“[^”]*”)")
 _REF = re.compile(
     r"(?<![\w$!.:'])"
     r"(?:(?P<sheet>'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?"
@@ -102,5 +103,7 @@ class Labels:
                 label = self.cell(sheet, start, prefer_row=prefer_row)
             return f"{label} ({m[0]})" if label else m[0]
 
-        return _REF.sub(name, text)
+        # text the formula quotes (“A1”) is a literal, not a cell: leave it untouched
+        parts = _QUOTED.split(text)
+        return "".join(p if i % 2 else _REF.sub(name, p) for i, p in enumerate(parts))
 

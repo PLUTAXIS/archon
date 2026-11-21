@@ -24,7 +24,9 @@ def _assert_read_aloud(result: ExplanationRecord, node_id: str, text: str) -> No
     assert result.node_id == node_id
     assert result.idiom == "other"
     assert result.evidence is not None
-    assert result.evidence.pattern_id in ("arithmetic", "arithmetic_constant")
+    assert result.evidence.pattern_id in (
+        "arithmetic", "arithmetic_constant", "function", "function_constant"
+    )
     assert result.plain_english == text
 
 
@@ -66,21 +68,28 @@ def test_positive_running_balance() -> None:
 
 
 def test_negative_plain_sum() -> None:
-    """An unsupported MEDIAN matches neither the tiered nor running balance idiom."""
-    result = match_formula("n3", "B1", parse_mock_formula("=MEDIAN(A1:A10)"))
+    """An unsupported MIRR matches neither the tiered nor running balance idiom."""
+    result = match_formula("n3", "B1", parse_mock_formula("=MIRR(A1:A10)"))
     _assert_unverified(result, "n3")
 
 
 def test_negative_2_deep_if() -> None:
     """A 2-deep IF ladder must NOT match as tiered_rate_table (needs 3+)."""
     tree = parse_mock_formula("=IF(B2<1000,0.05,IF(B2<5000,0.08,0.15))")
-    _assert_unverified(match_formula("n4", "C2", tree), "n4")
+    _assert_read_aloud(
+        match_formula("n4", "C2", tree), "n4",
+        "If B2 is less than 1000, 0.05; otherwise (if B2 is less than 5000, 0.08; "
+        "otherwise 0.15); uses a number typed into the formula (1000, 0.05, 5000, 0.08, 0.15).",
+    )
 
 
 def test_negative_2_variable_if() -> None:
     """A nested IF pivoting on TWO different variables must NOT match."""
     formula = "=IF(B2<1000,0.05,IF(C2<5000,0.08,IF(B2<10000,0.12,0.15)))"
-    _assert_unverified(match_formula("n5", "D2", parse_mock_formula(formula)), "n5")
+    result = match_formula("n5", "D2", parse_mock_formula(formula))
+    assert result.idiom != "tiered_rate_table"
+    assert result.evidence is not None
+    assert result.evidence.pattern_id == "function_constant"
 
 
 def test_negative_unknown_function() -> None:

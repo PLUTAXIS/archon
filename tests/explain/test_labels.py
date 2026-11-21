@@ -49,3 +49,9 @@ def test_relabel_does_not_touch_parts_of_longer_tokens():
     assert LB.relabel("VLOOKUP(B4) and B4x and XB4", "S", prefer_row=False) == (
         "VLOOKUP(Price (B4)) and B4x and XB4"
     )
+
+
+def test_relabel_never_renames_text_inside_quotes():
+    assert LB.relabel("If B4 is “B4”, B4.", "S", prefer_row=False) == (
+        "If Price (B4) is “B4”, Price (B4)."
+    )

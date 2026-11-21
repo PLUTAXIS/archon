@@ -14,7 +14,9 @@ def _assert_read_aloud(result: ExplanationRecord, node_id: str, text: str) -> No
     assert result.node_id == node_id
     assert result.idiom == "other"
     assert result.evidence is not None
-    assert result.evidence.pattern_id in ("arithmetic", "arithmetic_constant")
+    assert result.evidence.pattern_id in (
+        "arithmetic", "arithmetic_constant", "function", "function_constant"
+    )
     assert result.plain_english == text
 
 
@@ -104,7 +106,7 @@ def test_negative_ratio_by_constant() -> None:
 
 
 def test_negative_sum_two_arguments() -> None:
-    _assert_unverified(_run("n4", "C1", "=SUM(A1,B1)"), "n4")
+    _assert_read_aloud(_run("n4", "C1", "=SUM(A1,B1)"), "n4", "The total of A1 and B1.")
 
 
 def test_negative_round_one_argument() -> None:
@@ -112,7 +114,10 @@ def test_negative_round_one_argument() -> None:
 
 
 def test_negative_round_of_expression() -> None:
-    _assert_unverified(_run("n6", "D2", "=ROUND(B2*C2,2)"), "n6")
+    _assert_read_aloud(
+        _run("n6", "D2", "=ROUND(B2*C2,2)"), "n6",
+        "(B2 multiplied by C2) rounded to 2 decimal places.",
+    )
 
 
 def test_determinism_all_tier1() -> None:

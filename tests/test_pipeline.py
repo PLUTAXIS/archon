@@ -96,6 +96,19 @@ class RunAuditTests(unittest.TestCase):
         self.assertGreater(card["score"], 0)
 
 
+class AffectedBlocksTests(unittest.TestCase):
+    def test_bug_lists_exactly_the_blocks_its_cells_reach(self):
+        # E2:E11 reads only column D; D reads column C. A bug in C6 reaches D6 and E6,
+        # which live in the D and E blocks; F12 reads only A1 and must not be listed.
+        rows = [("S", "A1", "Rate"), ("S", "B1", "0.1")]
+        for r in range(2, 12):
+            rows += [("S", f"A{r}", str(r)), ("S", f"C{r}", "7" if r == 6 else f"=A{r}*2"),
+                     ("S", f"D{r}", f"=C{r}+1"), ("S", f"E{r}", f"=D{r}*3")]
+        rows.append(("S", "F12", "=A1+1"))
+        (bug,) = run_audit(rows, WID)["bugs"]
+        self.assertEqual(bug["affected_nodes"], ["S!D2:D11", "S!E2:E11"])
+
+
 class SeverityTests(unittest.TestCase):
     def test_local_override_with_plausible_value_is_minor(self):
         (bug,) = run_audit(_rows(), WID, values={("S", "C5"): 15.0})["bugs"]

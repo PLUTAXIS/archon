@@ -207,8 +207,12 @@ def _dag(
     ledger: list[BugLedgerEntry],
     cycles: list[dict[str, Any]],
     cells_in: int,
-) -> DagGraph:
-    """Collapse the cell graph to the Contract B map: clusters, flagged cells, input columns."""
+) -> tuple[DagGraph, dict[CellKey, str]]:
+    """Collapse the cell graph to the Contract B map: clusters, flagged cells, input columns.
+
+    Also returns where each graph cell landed (cell -> node id), so findings
+    measured on cells can be shown exactly on the map.
+    """
     risk = {r.node_id: to_contract_risk(score_record(r)) for r in records}
     nodes: dict[str, Node] = {}
     member_of: dict[CellKey, str] = {}
@@ -290,12 +294,13 @@ def _dag(
         for i, c in enumerate(cycles, start=1)
     ]
     ordered = [nodes[k] for k in sorted(nodes)]
-    return DagGraph(
+    dag = DagGraph(
         schema_version="1.0", workbook_id=workbook_id, nodes=ordered,
         edges=[edges[k] for k in sorted(edges)], bugs=ledger, cycles=contract_cycles,
         stats=Stats(cells_in=cells_in, nodes_out=len(ordered),
                     compression_ratio=cells_in / len(ordered) if ordered else 0.0),
     )
+    return dag, placed
 
 
 def _parse_label(label: str) -> CellKey:
@@ -430,9 +435,8 @@ def run_audit(
     formulas = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
     labels = Labels(rows)
 
-    bugs, severity_reasons = _ledger(
-        find_override_bugs(rows, clusters, constants, graph=graph), values or {}
-    )
+    found_bugs = find_override_bugs(rows, clusters, constants, graph=graph)
+    bugs, severity_reasons = _ledger(found_bugs, values or {})
 
     cycles = []
     for cycle in find_cycles(graph):
@@ -448,7 +452,15 @@ def run_audit(
     ids = _cluster_ids(clusters)
     records, parsed = _explain(clusters, ids, formulas, labels)
     report = compose_report(workbook_id, records, unmatched_shapes=rank_unmatched(parsed))
-    dag = _dag(workbook_id, g, clusters, ids, formulas, labels, records, unparsed, bugs, cycles, len(rows))
+    dag, placed = _dag(workbook_id, g, clusters, ids, formulas, labels, records, unparsed, bugs, cycles, len(rows))
+    # Blocks a bug really affects: its downstream cells mapped to their blocks.
+    # (Following block-to-block links instead would overstate the impact, since a
+    # block reached through one cell has successors through all of its cells.)
+    bug_id_at = {(b.sheet, b.address): b.bug_id for b in bugs}
+    affected = {
+        bug_id_at[(b.sheet, b.cell)]: sorted({placed[k] for k in b.downstream if k in placed})
+        for b in found_bugs
+    }
 
     unknown_writes = [
         {k: d[k] for k in ("module", "procedure", "line", "text", "reason")}
@@ -473,7 +485,8 @@ def run_audit(
             "unverified_clusters": sum(r.status == "unverified" for r in records),
         },
         "bugs": [
-            {**b.model_dump(mode="json"), "severity_reasons": severity_reasons[b.bug_id]}
+            {**b.model_dump(mode="json"), "severity_reasons": severity_reasons[b.bug_id],
+             "affected_nodes": affected[b.bug_id]}
             for b in bugs
         ],
         "cycles": cycles,

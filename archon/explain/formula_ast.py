@@ -48,7 +48,14 @@ class Call:
     args: tuple[Node, ...]
 
 
-Node = Num | Ref | Range | BinOp | Call
+@dataclass(frozen=True)
+class Str:
+    """A text literal, such as "Total" in ="Total: "&A1."""
+
+    text: str
+
+
+Node = Num | Ref | Range | BinOp | Call | Str
 
 
 class FormulaSyntaxError(ValueError):
@@ -190,6 +197,8 @@ def to_formula_text(node: Node) -> str:
         return node.address
     if isinstance(node, Range):
         return f"{node.start}:{node.end}"
+    if isinstance(node, Str):
+        return '"' + node.text.replace('"', '""') + '"'
     if isinstance(node, BinOp):
         return f"{_operand(node.left)}{node.op}{_operand(node.right)}"
     return f"{node.name}({','.join(to_formula_text(a) for a in node.args)})"

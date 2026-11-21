@@ -673,6 +673,7 @@ button:focus-visible, a:focus-visible {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+  position: relative; /* keeps visually-hidden labels inside the scroll box */
 }
 
 table {
@@ -990,6 +991,29 @@ td {
   line-height: 1.45;
   color: var(--text-secondary);
 }
+
+/* ---------- Circular reference review ---------- */
+.cycle-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.text-button.is-selected {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cycle-verdict {
+  padding: 1px 6px;
+  font-size: .66rem;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+
+.cycle-verdict--logic { color: var(--accent); }
+.cycle-verdict--error { color: #FF5A5A; }
 
 /* ---------- Scorecard ---------- */
 .scorecard {
@@ -1398,6 +1422,7 @@ td {
   .explain-meta strong { color: #111 !important; }
 
   .spec > summary h4::before { content: none; }
+  .cycle-verdict { color: #111 !important; }
   .spec-sheet { break-before: page; }
   .spec-calcs > li { break-inside: avoid; }
   .spec-formula,

@@ -28,3 +28,5 @@ pattern_flags:
   link: null
   arithmetic: null
   arithmetic_constant: EMBEDDED_CONSTANT
+  function: null
+  function_constant: EMBEDDED_CONSTANT

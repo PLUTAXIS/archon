@@ -57,7 +57,47 @@ def test_sheet_qualified_lookup_table_is_recognised():
     assert record.evidence.pattern_id == "vlookup_exact"
 
 
-@pytest.mark.parametrize("formula", ["=C2*MEDIAN(A1:A9)", "=C2*(A1>0)", "=MAX(A1,B1)"])
+@pytest.mark.parametrize("formula", ["=C2*MIRR(A1:A9)", "=C2*(A1>0)", "=IRR(A1,B1)"])
 def test_unknown_parts_stay_unverified(formula):
+    record, _ = _run(formula)
+    assert record.status == "unverified"
+
+
+@pytest.mark.parametrize(
+    ("formula", "text"),
+    [
+        ("=AVERAGE(C2:C9)", "The average of C2:C9."),
+        ("=MAX(A1,0)", "The largest of A1 and 0."),
+        ("=SUM(A1,B1,C1)", "The total of A1, B1 and C1."),
+        ("=LEFT(A1,3)", "The first 3 characters of A1."),
+        ("=MIN(A1:A9)/MAX(A1:A9)", "Calculates the smallest of A1:A9 divided by the largest of A1:A9."),
+    ],
+)
+def test_listed_functions_are_read_aloud_without_risk(formula, text):
+    record, risk = _run(formula)
+    assert record.plain_english == text
+    assert risk.score == 0
+
+
+def test_if_reads_condition_and_flags_typed_in_thresholds():
+    record, risk = _run("=IF(C2>500,C2*0.2,0)")
+    assert record.plain_english == (
+        "If C2 is greater than 500, C2 multiplied by 0.2; otherwise 0; "
+        "uses a number typed into the formula (500, 0.2)."
+    )
+    assert risk.flags == ("EMBEDDED_CONSTANT",)
+
+
+def test_conditions_and_text():
+    record, _ = _run('=IF(AND(A1>0,B1<1),"ok","check")')
+    assert record.plain_english == (
+        "If all of (A1 is greater than 0 and B1 is less than 1) hold, “ok”; otherwise “check”."
+    )
+    record, _ = _run('="Total: "&A1')
+    assert record.plain_english == "Calculates “Total: ” followed by A1."
+
+
+@pytest.mark.parametrize("formula", ["=ROUND(A1,1.5)", "=LEFT(A1)", "=A1>B1", "=SUM()"])
+def test_misleading_or_incomplete_calls_stay_unverified(formula):
     record, _ = _run(formula)
     assert record.status == "unverified"

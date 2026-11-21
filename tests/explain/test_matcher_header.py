@@ -28,7 +28,7 @@ def test_unknown_header_is_unresolved() -> None:
 
 
 def test_header_never_rescues_an_unmatched_formula() -> None:
-    tree = parse_mock_formula("=MEDIAN(A1:A10)")
+    tree = parse_mock_formula("=MIRR(A1:A10)")
     result = match_formula("h4", "B1", tree, header="Gross_Revenue")
     assert result.status == "unverified"
     assert result.evidence is None

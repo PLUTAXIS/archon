@@ -1,0 +1,34 @@
+# Phrases for reading functions aloud inside an explanation.
+#   {args}    every argument, joined ("A, B and C")
+#   {0}, {1}  positional arguments; the call must have exactly that many
+#   structural: argument positions that are settings (a character count, a
+#               number of decimals), so a number there is not flagged as a
+#               business value typed into the formula
+#   conditions: arguments are conditions (A1>0), read as "A1 is greater than 0"
+# A function not listed here is never paraphrased: the formula stays unverified.
+functions:
+  SUM: "the total of {args}"
+  AVERAGE: "the average of {args}"
+  MEDIAN: "the median of {args}"
+  MAX: "the largest of {args}"
+  MIN: "the smallest of {args}"
+  COUNT: "the count of numbers in {args}"
+  COUNTA: "the count of non-empty cells in {args}"
+  PRODUCT: "the product of {args}"
+  ABS: "the absolute value of {0}"
+  ROUND: {phrase: "{0} rounded to {1} decimal places", structural: [1]}
+  ROUNDUP: {phrase: "{0} rounded up to {1} decimal places", structural: [1]}
+  ROUNDDOWN: {phrase: "{0} rounded down to {1} decimal places", structural: [1]}
+  AND: {phrase: "all of ({args}) hold", conditions: true}
+  OR: {phrase: "any of ({args}) holds", conditions: true}
+  NOT: {phrase: "it is not the case that {0}", conditions: true}
+  LEFT: {phrase: "the first {1} characters of {0}", structural: [1]}
+  RIGHT: {phrase: "the last {1} characters of {0}", structural: [1]}
+  MID: {phrase: "{2} characters of {0} starting at position {1}", structural: [1, 2]}
+  LEN: "the number of characters in {0}"
+  UPPER: "{0} in capitals"
+  LOWER: "{0} in lower case"
+  TRIM: "{0} with extra spaces removed"
+  CONCATENATE: "{args} joined together"
+  CONCAT: "{args} joined together"
+  TEXT: {phrase: "{0} shown in the format {1}", structural: [1]}

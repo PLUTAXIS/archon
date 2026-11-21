@@ -74,7 +74,7 @@ def test_running_balance():
 
 
 def test_unverified_is_risk():
-    result = score_record(_record("=MEDIAN(A1:A10)"))
+    result = score_record(_record("=MIRR(A1:A10)"))
     assert result.score == 20
     assert result.flags == ("UNVERIFIED_FORMULA",)
 
@@ -117,7 +117,7 @@ def test_every_pattern_has_explicit_risk_decision():
 
 
 def test_determinism_20_runs():
-    formulas = ["=NOW()", "=IFERROR(B2/C2,0)", "=MEDIAN(A1:A10)", "=E2*F2"]
+    formulas = ["=NOW()", "=IFERROR(B2/C2,0)", "=MIRR(A1:A10)", "=E2*F2"]
     first = [score_record(_record(f)) for f in formulas]
     for _ in range(20):
         assert [score_record(_record(f)) for f in formulas] == first

@@ -87,6 +87,75 @@ function ScoreCard({ card }) {
   )
 }
 
+const VERDICT_TEXT = { logic: 'Intended calculation', error: 'Error to fix' }
+
+// Reviewer verdicts are kept in this browser, per workbook, so re-uploading
+// the same file restores them. Storage can be unavailable; the page still works.
+function loadVerdicts(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
+function CycleReview({ cycles, workbookId }) {
+  const storageKey = `archon:cycle-verdicts:${workbookId}`
+  const [verdicts, setVerdicts] = useState(() => loadVerdicts(storageKey))
+  const reviewed = cycles.filter((c) => verdicts[c.members.join('|')]).length
+
+  function decide(id, verdict) {
+    const next = { ...verdicts }
+    if (next[id] === verdict) delete next[id]
+    else next[id] = verdict
+    setVerdicts(next)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next))
+    } catch {
+      // storage blocked: the verdict still shows for this session
+    }
+  }
+
+  return (
+    <div className="result-block">
+      <div className="block-heading">
+        <h4>Circular references</h4>
+        <span>{reviewed} of {cycles.length} reviewed</span>
+      </div>
+      <div className="explain-list">
+        {cycles.map((c) => {
+          const id = c.members.join('|')
+          const verdict = verdicts[id]
+          return (
+            <div className="explain-row cycle-row" key={id}>
+              <div className="explain-meta">
+                <code>{c.members.join(' → ')}</code>
+                {verdict && <span className={`cycle-verdict cycle-verdict--${verdict}`}>Reviewed: {VERDICT_TEXT[verdict]}</span>}
+              </div>
+              <p className="explain-flags">
+                Suggested: {c.suggested_classification === 'logic' ? 'intended calculation' : 'error'} ({c.reason})
+              </p>
+              <div className="cycle-actions no-print" role="group" aria-label={`Verdict for ${c.members.join(', ')}`}>
+                {Object.entries(VERDICT_TEXT).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`text-button${verdict === value ? ' is-selected' : ''}`}
+                    aria-pressed={verdict === value}
+                    onClick={() => decide(id, value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function AuditReport({ analysis }) {
   const { summary, bugs, cycles, report, graph, scorecard } = analysis
   const [focus, setFocus] = useState(null)
@@ -160,25 +229,10 @@ function AuditReport({ analysis }) {
           <h4>Dependency map</h4>
           <span>{graph.stats.nodes_out.toLocaleString()} blocks from {graph.stats.cells_in.toLocaleString()} cells · click a block for its formula</span>
         </div>
-        <DependencyMap graph={graph} focus={focus} onFocus={setFocus} />
+        <DependencyMap graph={graph} bugs={bugs} focus={focus} onFocus={setFocus} />
       </div>
 
-      {cycles.length > 0 && (
-        <div className="result-block">
-          <div className="block-heading"><h4>Circular references</h4><span>needs human review</span></div>
-          <div className="formula-list">
-            {cycles.map((c) => (
-              <div className="formula-row" key={c.members.join('|')}>
-                <div className="formula-location">
-                  <strong>Suggested: {c.suggested_classification === 'logic' ? 'intentional' : 'error'}</strong>
-                  <span>{c.reason}</span>
-                </div>
-                <code>{c.members.join(' → ')}</code>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {cycles.length > 0 && <CycleReview cycles={cycles} workbookId={graph.workbook_id} />}
 
       <div className="result-block">
         <div className="block-heading"><h4>Risky formulas</h4><span>{risky.length} flagged · highest first</span></div>

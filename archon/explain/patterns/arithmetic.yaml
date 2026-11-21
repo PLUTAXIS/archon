@@ -19,3 +19,15 @@ patterns:
     shape: arithmetic
     constants: true
     template: "Calculates {expression}; uses a number typed into the formula ({constants})."
+  - id: function
+    priority: 85
+    idiom: other
+    shape: phrase_call
+    constants: false
+    template: "{expression}."
+  - id: function_constant
+    priority: 85
+    idiom: other
+    shape: phrase_call
+    constants: true
+    template: "{expression}; uses a number typed into the formula ({constants})."
