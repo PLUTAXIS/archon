@@ -964,6 +964,20 @@ td {
   }
 }
 
+/* ---------- Audit progress ---------- */
+.audit-progress {
+  height: 4px;
+  margin-top: 10px;
+  background: var(--surface-raised);
+}
+
+.audit-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .3s var(--ease-out);
+}
+
 /* ---------- Audit actions ---------- */
 .result-block + .metric-grid {
   margin-top: 22px;

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from archon.ingest.xlsx import extract
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dragged_10k.xlsx"

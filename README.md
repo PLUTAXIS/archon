@@ -29,3 +29,7 @@ python -m archon.scrubber.scrubber MyFile.xlsm          # client side: mask data
 python run_pipeline.py MyFile.scrubbed.xlsm -o audit.json
 python scripts/benchmark.py book1.xlsm book2.xlsm      # coverage, timing, determinism
 ```
+
+Scrubber check in real Excel (Windows): `scripts/excel_roundtrip.ps1` builds a workbook with
+pivot tables, pictures, external links and quoted text, and confirms the scrubbed copy opens
+without a repair. Usage is at the top of the script.

@@ -193,5 +193,19 @@ class TestCli(unittest.TestCase):
         self.assertEqual(gb.main(["no_such_file.json"]), 1)
 
 
+class SheetModuleScopeTests(unittest.TestCase):
+    """In a sheet's own module, Range()/Me.Range() mean that sheet; ActiveSheet never does."""
+
+    def test_me_and_bare_range_use_the_module_sheet(self):
+        g = gb.build_graph(vba_only('Sub A()\n Me.Range("B2").Value = 1\n Range("C3").Value = 2\nEnd Sub'))
+        targets = {v for _u, v, d in g.edges(data=True) if d["label"] == "vba_write"}
+        self.assertEqual(targets, {"S!B2", "S!C3"})
+
+    def test_active_sheet_stays_unknown_even_with_a_default(self):
+        g = gb.build_graph(vba_only('Sub A()\n ActiveSheet.Range("B2").Value = 1\nEnd Sub'))
+        (unknown,) = [d for _n, d in g.nodes(data=True) if d["type"] == "vba_write_range_unknown"]
+        self.assertIn("ActiveSheet", unknown["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

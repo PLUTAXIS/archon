@@ -36,6 +36,7 @@ class Sheet(BaseModel):
     dimensions: str
     merged_cells: list[str] = Field(default_factory=list)
     frozen_panes: str | None = None
+    code_name: str | None = None  # the sheet's VBA module name (codeName), e.g. "Sheet1"
 
 
 class Cell(BaseModel):

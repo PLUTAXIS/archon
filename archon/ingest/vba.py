@@ -6,8 +6,7 @@ from pathlib import Path
 
 from oletools.olevba import VBA_Parser, VBA_Project
 
-from archon.contracts.extract import VbaModule, ExtractException
-
+from archon.contracts.extract import ExtractException, VbaModule
 
 log = logging.getLogger(__name__)
 
@@ -153,12 +152,12 @@ def _classify_document_or_class(code: str) -> str:
             .replace("}", "")
         )
 
-        if EXCEL_DOCUMENT_GUID in normalized_base:
-            if (
-                predeclared_match
-                and predeclared_match.strip().lower().endswith("true")
-            ):
-                return "sheet"
+        if (
+            EXCEL_DOCUMENT_GUID in normalized_base
+            and predeclared_match
+            and predeclared_match.strip().lower().endswith("true")
+        ):
+            return "sheet"
 
     return "class"
 

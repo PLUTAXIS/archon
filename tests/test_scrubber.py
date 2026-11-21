@@ -101,7 +101,9 @@ class ScrubTests(unittest.TestCase):
     def test_formulas_are_kept_and_their_saved_results_removed(self):
         sheet = self.scrub()[0]["xl/worksheets/sheet1.xml"].decode()
         self.assertIn("<f>B1*2</f>", sheet)
-        self.assertIn('<f>A1&amp;"x"</f>', sheet)
+        # structure kept; quoted text inside the formula is masked like cell text
+        self.assertRegex(sheet, r'<f>A1&amp;"Text_\d+"</f>')
+        self.assertNotIn('"x"', sheet)
         self.assertIn('<f t="shared" si="0"/>', sheet)
         for cell_ref in ("C1", "I1", "J1"):
             cell = re.search(rf'<c r="{cell_ref}"[^>]*>(.*?)</c>', sheet).group(1)
@@ -215,7 +217,10 @@ class TrustTests(unittest.TestCase):
             self.assertNotIn(word, text)
 
     def test_file_stays_short_enough_to_audit(self):
-        self.assertLessEqual(len(script_text().splitlines()), 250)
+        # Short enough for a client's security team to read in one sitting. Raised from 250
+        # to cover pivot caches, external links, pictures, drawings, the saved-folder path
+        # and text inside formulas (gaps found by round-tripping files through real Excel).
+        self.assertLessEqual(len(script_text().splitlines()), 320)
 
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("openpyxl"), "openpyxl not installed")

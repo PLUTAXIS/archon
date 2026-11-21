@@ -8,6 +8,30 @@ const API_BASE = (
 ).replace(/\/+$/, '')
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
+const POLL_MS = 400
+
+async function readJson(response) {
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.detail || `Upload failed (${response.status}).`)
+  return data
+}
+
+// Start a background audit and report each stage; an older API without jobs
+// (404/405) gets the original single request that waits for the whole audit.
+async function runAudit(formData, onProgress) {
+  const started = await fetch(`${API_BASE}/audit/jobs`, { method: 'POST', body: formData })
+  if (started.status === 404 || started.status === 405) {
+    return readJson(await fetch(`${API_BASE}/audit`, { method: 'POST', body: formData }))
+  }
+  const { job_id: jobId } = await readJson(started)
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    const job = await readJson(await fetch(`${API_BASE}/audit/jobs/${jobId}`))
+    if (job.status === 'done') return job.result
+    if (job.status === 'error') throw new Error(job.error)
+    onProgress({ stage: job.stage, step: job.step, steps: job.steps })
+  }
+}
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -428,6 +452,7 @@ function App() {
   const [status, setStatus] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [progress, setProgress] = useState(null)
 
   function chooseFile(nextFile) {
     if (!nextFile) return
@@ -470,19 +495,7 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-
-      const response = await fetch(`${API_BASE}/audit`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        throw new Error(data.detail || `Upload failed (${response.status}).`)
-      }
-
-      setResult(data)
+      setResult(await runAudit(formData, setProgress))
       setStatus('success')
     } catch (err) {
       setError(
@@ -491,6 +504,8 @@ function App() {
           : err.message || 'Something went wrong. Please try again.'
       )
       setStatus('error')
+    } finally {
+      setProgress(null)
     }
   }
 
@@ -623,11 +638,21 @@ function App() {
             {file && status !== 'success' && (
               <button className="analyze-button" type="button" onClick={uploadWorkbook} disabled={status === 'uploading'}>
                 {status === 'uploading' ? (
-                  <><span className="spinner" /> Auditing workbook...</>
+                  <>
+                    <span className="spinner" />
+                    {progress ? `${progress.stage}… (${progress.step} of ${progress.steps})` : 'Auditing workbook...'}
+                  </>
                 ) : (
                   <>Audit workbook <Icon name="arrow" size={18} /></>
                 )}
               </button>
+            )}
+
+            {status === 'uploading' && progress && (
+              <div className="audit-progress" role="progressbar" aria-label="Audit progress"
+                aria-valuemin={0} aria-valuemax={progress.steps} aria-valuenow={progress.step}>
+                <span style={{ width: `${(100 * progress.step) / progress.steps}%` }} />
+              </div>
             )}
 
             {status === 'error' && (

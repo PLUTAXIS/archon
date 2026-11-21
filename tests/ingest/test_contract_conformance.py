@@ -1,5 +1,7 @@
 from pathlib import Path
+
 import openpyxl
+
 from archon.contracts.extract import RawExtract
 from archon.ingest.xlsx import extract
 

@@ -6,8 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import openpyxl
 
-from archon.ingest.vba import extract_vba, _classify
-
+from archon.ingest.vba import _classify, extract_vba
 
 FIXTURE = Path(__file__).parent / "fixtures" / "vba_classification_test.xlsm"
 

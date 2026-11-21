@@ -2,8 +2,9 @@
 
 Usage:  python verify_scrub.py ORIGINAL.xlsm SCRUBBED.xlsm [word ...]
 
-Checks: same parts, VBA identical byte for byte, same formulas, and none of the
-words you list remain in raw ZIP part bytes. This is NOT full VBA decompilation:
+Checks: same parts, VBA identical byte for byte, same formulas (the scrubber masks
+quoted text inside formulas, so "..." literals are compared as placeholders), and
+none of the words you list remain in raw ZIP part bytes. This is NOT full VBA decompilation:
 compressed or encoded strings may not be detected.
 Prints OK / FAIL / SKIP per check. Exit code 0 only when nothing failed.
 """
@@ -14,6 +15,12 @@ import zipfile
 
 SHEET = re.compile(r"xl/worksheets/sheet\d+\.xml")
 FORMULA = re.compile(r"<f\b[^>]*?(?:/>|>.*?</f>)", re.DOTALL)
+QUOTED = re.compile(r'"(?:[^"]|"")+"')
+
+
+def structure(formula):
+    """A formula with its quoted text replaced by a placeholder."""
+    return QUOTED.sub('"..."', formula)
 
 
 def formulas(z):
@@ -50,7 +57,9 @@ def verify(original, scrubbed, words=()):
         if macros:
             results.append(("SKIP", "VBA compressed/encoded strings were not decompiled; raw-byte scan only"))
         fa, fb = formulas(a), formulas(b)
-        results.append(("OK" if fa == fb else "FAIL", "all %d formulas unchanged" % len(fa)))
+        same = [structure(f) for f in fa] == [structure(f) for f in fb]
+        results.append(("OK" if same else "FAIL",
+                        "all %d formulas unchanged apart from masked quoted text" % len(fa)))
         for word in words:
             needles = [word.lower().encode("utf-8"),
                        word.lower().encode("utf-16le"),

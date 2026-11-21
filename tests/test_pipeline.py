@@ -340,5 +340,15 @@ class AuditEndpointTests(unittest.TestCase):
         self.assertTrue(body["analysis"]["extract"]["vba_modules"])
 
 
+
+class SheetModuleTests(unittest.TestCase):
+    def test_sheet_module_defaults_to_its_own_sheet(self):
+        from archon.pipeline import _vba_inputs
+
+        modules = {m["module"]: m.get("default_sheet") for m in _vba_inputs(extract(XLSM))}
+        self.assertEqual(modules["SalesDataSheet.cls"], "SalesData")
+        self.assertIsNone(modules["Module1.bas"])  # standard modules have no own sheet
+
+
 if __name__ == "__main__":
     unittest.main()

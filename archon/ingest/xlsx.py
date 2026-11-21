@@ -1,9 +1,10 @@
-from archon.ingest.vba import extract_vba
 import hashlib
+import logging
 import uuid
-from pathlib import Path
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
+
 import openpyxl
 
 from archon.contracts.extract import (
@@ -12,6 +13,13 @@ from archon.contracts.extract import (
     Sheet,
     Source,
 )
+from archon.ingest.vba import extract_vba
+
+log = logging.getLogger(__name__)
+# What a damaged or unusual workbook part can raise while its XML is read.
+# The extract still completes; the part is reported in the log, never dropped silently.
+PART_ERRORS = (KeyError, IndexError, AttributeError, TypeError, ValueError, OSError,
+               zipfile.BadZipFile, ET.ParseError)
 
 
 def _sha256(path: Path) -> str:
@@ -48,16 +56,15 @@ def _sheet_visibility(path: Path) -> dict[str, str]:
     """
     states: dict[str, str] = {}
     try:
-        with zipfile.ZipFile(path, "r") as z:
-            with z.open("xl/workbook.xml") as f:
-                tree = ET.parse(f)
-                ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-                for sheet in tree.findall(".//ms:sheet", ns):
-                    name = sheet.get("name", "")
-                    state = sheet.get("state", "visible")
-                    states[name] = state
-    except Exception:
-        pass
+        with zipfile.ZipFile(path, "r") as z, z.open("xl/workbook.xml") as f:
+            tree = ET.parse(f)
+            ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            for sheet in tree.findall(".//ms:sheet", ns):
+                name = sheet.get("name", "")
+                state = sheet.get("state", "visible")
+                states[name] = state
+    except PART_ERRORS as exc:
+        log.warning("skipped unreadable sheet visibility: %s", exc)
     return states
 
 
@@ -104,8 +111,8 @@ def _sheet_rel_map(path: Path) -> dict[str, str]:
                             part = f"xl/{target}"
                         name_to_part[rid_to_name[rid]] = part
 
-    except Exception:
-        pass
+    except PART_ERRORS as exc:
+        log.warning("skipped unreadable sheet relationships: %s", exc)
 
     return name_to_part
 
@@ -125,6 +132,7 @@ def _sheet_metadata(path: Path) -> dict[str, dict]:
             for sheet_name, part_path in rel_map.items():
                 merged = []
                 frozen = None
+                code_name = None
                 try:
                     with z.open(part_path) as f:
                         tree = ET.parse(f)
@@ -132,19 +140,23 @@ def _sheet_metadata(path: Path) -> dict[str, dict]:
                             ref = mc.get("ref")
                             if ref:
                                 merged.append(ref)
+                        props = tree.find(".//ms:sheetPr", ns)
+                        if props is not None:
+                            code_name = props.get("codeName")
                         pane = tree.find(".//ms:pane", ns)
                         if pane is not None:
                             state = pane.get("state", "")
                             if state == "frozen":
                                 frozen = pane.get("topLeftCell")
-                except Exception:
-                    pass
+                except PART_ERRORS as exc:
+                    log.warning("skipped unreadable one sheet's layout: %s", exc)
                 metadata[sheet_name] = {
                     "merged_cells": merged,
                     "frozen_panes": frozen,
+                    "code_name": code_name,
                 }
-    except Exception:
-        pass
+    except PART_ERRORS as exc:
+        log.warning("skipped unreadable sheet layout: %s", exc)
 
     return metadata
 
@@ -155,21 +167,20 @@ def _defined_names(path: Path) -> list:
     names = []
     ns = {"ms": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     try:
-        with zipfile.ZipFile(path, "r") as z:
-            with z.open("xl/workbook.xml") as f:
-                tree = ET.parse(f)
-                for dn in tree.findall(".//ms:definedName", ns):
-                    name = dn.get("name", "")
-                    scope = dn.get("localSheetId", "workbook")
-                    refers_to = dn.text or ""
-                    if name:
-                        names.append(DefinedName(
-                            name=name,
-                            scope=str(scope),
-                            refers_to=refers_to,
-                        ))
-    except Exception:
-        pass
+        with zipfile.ZipFile(path, "r") as z, z.open("xl/workbook.xml") as f:
+            tree = ET.parse(f)
+            for dn in tree.findall(".//ms:definedName", ns):
+                name = dn.get("name", "")
+                scope = dn.get("localSheetId", "workbook")
+                refers_to = dn.text or ""
+                if name:
+                    names.append(DefinedName(
+                        name=name,
+                        scope=str(scope),
+                        refers_to=refers_to,
+                    ))
+    except PART_ERRORS as exc:
+        log.warning("skipped unreadable defined names: %s", exc)
     return names
 
 
@@ -222,8 +233,8 @@ def _tables(path: Path) -> list:
                                         target = rel.get("Target", "")
                                         if table_file.split("/")[-1] in target:
                                             sheet_name = sn
-                            except Exception:
-                                pass
+                            except PART_ERRORS as exc:
+                                log.warning("skipped unreadable a table's sheet: %s", exc)
 
                         if name and ref:
                             tables.append(Table(
@@ -232,10 +243,10 @@ def _tables(path: Path) -> list:
                                 ref=ref,
                                 is_hidden=False,
                             ))
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except PART_ERRORS as exc:
+                    log.warning("skipped unreadable one table: %s", exc)
+    except PART_ERRORS as exc:
+        log.warning("skipped unreadable tables: %s", exc)
 
     return tables
 
@@ -279,6 +290,7 @@ def extract(path: Path) -> RawExtract:
                 dimensions=ws.calculate_dimension() if getattr(ws, "dimensions", None) else "A1:A1",
                 merged_cells=meta.get("merged_cells", []),
                 frozen_panes=meta.get("frozen_panes", None),
+                code_name=meta.get("code_name"),
             ))
 
         # Build a lookup of cached values from second pass
@@ -358,7 +370,7 @@ def extract(path: Path) -> RawExtract:
     if suffix_lower in (".xlsm", ".xlsb"):
         try:
             vba_modules, vba_exceptions = extract_vba(path)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - oletools can raise anything; recorded below, not hidden
             from archon.contracts.extract import ExtractException
             vba_exceptions.append(
                 ExtractException(

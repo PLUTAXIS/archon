@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -51,6 +51,15 @@ from archon.names import bound_whole_columns, expand_names, named_cells, referen
 from archon.risk.scorecard import score_workbook
 
 DOWNSTREAM_SAMPLE = 10
+# What a user waiting on a big workbook sees, in order (STAGES[0] is the API reading the file).
+STAGES = (
+    "Reading the workbook",
+    "Grouping copied formulas",
+    "Building the dependency graph",
+    "Finding overrides and circular references",
+    "Explaining formulas",
+    "Scoring risk and writing the report",
+)
 CellKey = tuple[str, str]  # (sheet, address); VBA nodes use ("", node id)
 
 
@@ -490,8 +499,11 @@ def run_audit(
     context: dict[str, int] | None = None,
     values: Mapping[CellKey, Any] | None = None,
     names: NameTable | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run every analysis stage and return one JSON-ready result.
+
+    progress, if given, is called with a short stage name as each stage starts.
 
     context carries workbook facts the cells don't show: counts of
     hidden_sheets, very_hidden_sheets and external_links (see run_extract).
@@ -503,12 +515,16 @@ def run_audit(
     rows = [(s, a, str(c)) for s, a, c in rows if str(c).strip()]
     as_written = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
     rows = [(s, a, expand_names(c.strip(), s, names or {})) for s, a, c in rows]
+    step = progress or (lambda _stage: None)
+    step(STAGES[1])
     clusters, constants, unparsed = cluster_cells_ast(rows)
+    step(STAGES[2])
     g = _cell_graph(rows, vba)
     graph = _adjacency(g, rows)
     formulas = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
     labels = Labels(rows, named_cells(names or {}))
 
+    step(STAGES[3])
     found_bugs = find_override_bugs(rows, clusters, constants, graph=graph)
     bugs, severity_reasons = _ledger(found_bugs, values or {})
 
@@ -528,9 +544,11 @@ def run_audit(
         })
     cycles.sort(key=lambda c: c["members"])
 
+    step(STAGES[4])
     ids = _cluster_ids(clusters)
     records, parsed = _explain(clusters, ids, formulas, labels)
     report = compose_report(workbook_id, records, unmatched_shapes=rank_unmatched(parsed))
+    step(STAGES[5])
     dag, placed = _dag(workbook_id, g, clusters, ids, formulas, labels, records, unparsed, bugs, cycles, len(rows))
     # Blocks a bug really affects: its downstream cells mapped to their blocks.
     # (Following block-to-block links instead would overstate the impact, since a
@@ -587,14 +605,28 @@ def _value_text(value: float | str | bool) -> str:
     return "'" + text if text.startswith("=") else text
 
 
-def run_extract(raw: RawExtract) -> dict[str, Any]:
+def _vba_inputs(raw: RawExtract) -> list[dict[str, str]]:
+    """VBA modules for the graph. In a sheet's own module an unqualified
+    Range("A1") (or Me.Range) means that sheet, so it becomes the default."""
+    sheet_of = {s.code_name: s.name for s in raw.sheets if s.code_name}
+    out = []
+    for m in raw.vba_modules:
+        module = {"module": m.name, "code": m.source}
+        own = sheet_of.get(m.name.rsplit(".", 1)[0]) if m.type == "sheet" else None
+        if own:
+            module["default_sheet"] = own
+        out.append(module)
+    return out
+
+
+def run_extract(raw: RawExtract, progress: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Audit a Contract A extract (archon.ingest.xlsx.extract) end to end."""
     rows: list[Row] = [
         (c.sheet, c.address, c.formula if c.formula else _value_text(c.cached_value))
         for c in raw.cells
         if c.formula or c.cached_value is not None
     ]
-    vba = [{"module": m.name, "code": m.source} for m in raw.vba_modules]
+    vba = _vba_inputs(raw)
     context = {
         "hidden_sheets": sum(s.visibility == "hidden" for s in raw.sheets),
         "very_hidden_sheets": sum(s.visibility == "veryHidden" for s in raw.sheets),
@@ -602,7 +634,7 @@ def run_extract(raw: RawExtract) -> dict[str, Any]:
     }
     values = {(c.sheet, c.address): c.cached_value for c in raw.cells if c.formula}
     names = reference_names(raw.defined_names, [s.name for s in sorted(raw.sheets, key=lambda s: s.index)])
-    result = run_audit(rows, raw.workbook_id, vba, context, values, names)
+    result = run_audit(rows, raw.workbook_id, vba, context, values, names, progress)
     # present the specification in the workbook's own sheet order
     order = {s.name: s.index for s in raw.sheets}
     result["spec"]["sheets"].sort(key=lambda x: (order.get(x["name"], len(order)), x["name"]))

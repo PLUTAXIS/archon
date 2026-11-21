@@ -64,6 +64,11 @@ class VerifyTests(unittest.TestCase):
         rewrite(self.out, bad, "xl/worksheets/sheet1.xml", SHEET.replace("B2*2", "B2*3").encode())
         self.assertIn("FAIL", self.statuses(out=bad))
 
+    def test_masked_quoted_text_still_counts_as_unchanged(self):
+        from archon.scrubber.verify_scrub import structure
+        self.assertEqual(structure('IF(A1="Acme",1,0)'), structure('IF(A1="Text_4",1,0)'))
+        self.assertNotEqual(structure('IF(A1="Acme",1,0)'), structure('IF(A2="Acme",1,0)'))
+
     def test_word_left_behind_fails(self):
         # an unscrubbed copy still contains the name, so the check must fail
         self.assertIn("FAIL", self.statuses(out=self.orig, words=["Acme"]))

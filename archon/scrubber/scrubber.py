@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Plutaxis scrubber: masks the confidential data in an Excel file on YOUR computer.
 CHANGES: cell/comment/property text -> dummy text; typed numbers -> random digits, same shape;
-saved formula results -> removed; chart text/caches -> removed or replaced.
-KEEPS (on purpose): formulas, sheet names, layout, VBA macro code.
+saved formula results -> removed; chart text/caches -> removed or replaced; quoted text inside
+formulas and dropdown lists -> the same dummy as the cell text; print headers/footers -> redacted;
+pivot-table and external-link copies of data -> masked; external file paths -> redacted;
+pictures -> a blank 1x1 image.
+KEEPS (on purpose): formula structure, sheet names, layout, VBA macro code.
 SAFETY: standard library only. Reads one file, writes one NEW file, never changes the original,
 never opens a network connection.
 USAGE:  python scrubber.py MyFile.xlsm      (creates MyFile.scrubbed.xlsm)
@@ -35,6 +38,17 @@ def inner_text(fragment):
     (single <t> or several rich <r><t> runs concatenated)."""
     return "".join(INNER_TEXT_RUNS.findall(fragment))
 
+QUOTED = re.compile(r'"((?:[^"]|"")+)"')  # a non-empty "text" literal inside a formula
+BLANK_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b494441"
+    "54789c6360000200000500017a5eab3f0000000049454e44ae426082")
+
+
+def mask_quoted(formula, m):
+    """'IF(B2="Acme",1,0)' -> 'IF(B2="Text_3",1,0)': the dummy matches the cell text's."""
+    return QUOTED.sub(lambda x: '"%s"' % m.text(x.group(1)), formula)
+
+
 class ScrubError(Exception):
     """A problem we can explain to the user in plain words."""
 
@@ -46,7 +60,8 @@ class Masker:
         self.texts, self.numbers = {}, {}
         self.keep_headers, self.keep = False, set()  # keep = shared strings used in row 1
         self.count = dict.fromkeys(
-            ("strings", "numbers", "formula_results", "comments", "properties", "charts"), 0)
+            ("strings", "numbers", "formula_results", "comments", "properties", "charts",
+             "pictures", "copies"), 0)
 
     def text(self, original):
         self.count["strings"] += 1
@@ -98,6 +113,9 @@ def scrub_sheet(xml, m):
         if re.search(r"<f[\s>/]", body):  # formula cell: keep <f>, drop its saved result
             body, n = re.subn(r"<v>.*?</v>|<v/>", "", body, flags=re.DOTALL)
             m.count["formula_results"] += n
+            body = re.sub(r"(<f\b[^>]*>)(.*?)(</f>)",
+                          lambda x: x.group(1) + mask_quoted(x.group(2), m) + x.group(3),
+                          body, flags=re.DOTALL)
         else:
             kind = re.search(r"""\bt=(?:"(\w+)"|'(\w+)')""", attrs)
             kind = (kind.group(1) or kind.group(2)) if kind else "n"
@@ -116,7 +134,12 @@ def scrub_sheet(xml, m):
                     body = "<is><t>%s</t></is>" % m.text(("shared", int(value.group(1))))
             # other "s" cells point into sharedStrings (scrubbed separately); "b"/"e" are TRUE/FALSE/errors
         return "<c%s>%s</c>" % (attrs, body)
-    return CELL.sub(fix_cell, xml)
+    xml = CELL.sub(fix_cell, xml)
+    # dropdown lists and conditional-format rules can quote real names too
+    xml = re.sub(r"(<formula\d?>)(.*?)(</formula\d?>)",
+                 lambda x: x.group(1) + mask_quoted(x.group(2), m) + x.group(3), xml, flags=re.DOTALL)
+    return re.sub(r"(<(odd|even|first)(Header|Footer)>).*?(</\2\3>)", r"\1&amp;Credacted\4",
+                  xml, flags=re.DOTALL)  # print headers/footers
 
 def scrub_shared_strings(xml, m):
     idx = [0]  # position of each string in the table
@@ -154,11 +177,43 @@ def scrub_threaded_comments(xml, m):
     return re.sub(r'\b(displayName|userId|providerId)="[^"]*"', r'\1="redacted"', xml)
 
 def scrub_chart(xml, m):
-    """Strip cached chart data and redact titles and labels in a chart XML part."""
+    """Charts and drawings: strip cached chart data; redact titles, labels, text boxes and
+    picture descriptions (often the original file name)."""
     xml, n1 = re.subn(r"<c:(numCache|strCache)>.*?</c:\1>", "", xml, flags=re.DOTALL)  # saved data copies
     xml, n2 = re.subn(r"<a:t>.*?</a:t>", "<a:t>redacted</a:t>", xml, flags=re.DOTALL)  # titles, labels
     m.count["charts"] += n1 + n2
-    return xml
+    return re.sub(r'\s(descr|title)="[^"]*"', "", xml)
+
+def scrub_workbook(xml, m):
+    """Excel stores the folder the file was last saved in (user and client names)."""
+    return re.sub(r'(<x15ac:absPath\b[^>]*\burl=")[^"]*(")', r"\1\2", xml)
+
+def scrub_pivot_cache(xml, m):
+    """Pivot tables keep their own copy of the source data: mask it like the cells."""
+    m.count["copies"] += 1
+    xml = re.sub(r'(<s v=")([^"]*)(")', lambda x: x.group(1) + m.text(x.group(2)) + x.group(3), xml)
+    xml = re.sub(r'(<n v=")([^"]*)(")', lambda x: x.group(1) + m.number(x.group(2)) + x.group(3), xml)
+    xml = re.sub(r'(<cacheField\b[^>]*\bname=")([^"]*)(")',
+                 lambda x: x.group(0) if m.keep_headers else x.group(1) + m.text(x.group(2)) + x.group(3), xml)
+    xml = re.sub(r'\brefreshedBy="[^"]*"', 'refreshedBy="redacted"', xml)  # who refreshed it
+    return re.sub(r'\s(minValue|maxValue)="[^"]*"', "", xml)  # optional summaries of real numbers
+
+def scrub_external_link(xml, m):
+    """A link to another workbook keeps copies of the values it reads: mask them."""
+    m.count["copies"] += 1
+    def fix(x):
+        attrs, value = x.group(1), x.group(2)
+        masked = m.text(value) if re.search(r'\bt="(?:str|s)"', attrs) else m.number(value)
+        return "<cell%s><v>%s</v>" % (attrs, masked)
+    return re.sub(r"<cell\b([^>]*)><v>(.*?)</v>", fix, xml, flags=re.DOTALL)
+
+def scrub_link_target(xml, m):
+    """External file paths name people, clients and folders: keep only that a link exists.
+    Every target here points at the other file (Excel also stores a relative fallback)."""
+    def fix(x):
+        m.count["copies"] += 1
+        return 'Target="redacted_link%d%s"' % (m.count["copies"], os.path.splitext(x.group(1))[1][:5])
+    return re.sub(r'Target="([^"]*)"', fix, xml)
 
 def pick_handler(name):
     """Which scrubbing function (if any) applies to this part of the file."""
@@ -172,10 +227,18 @@ def pick_handler(name):
         return scrub_comments
     if name.startswith(("xl/threadedComments/", "xl/persons/")):
         return scrub_threaded_comments
-    if re.fullmatch(r"xl/charts/chart\d*\.xml", name):
+    if re.fullmatch(r"xl/(?:charts/chart|drawings/drawing)\d*\.xml", name):
         return scrub_chart
+    if name == "xl/workbook.xml":
+        return scrub_workbook
     if re.fullmatch(r"xl/tables/table\d*\.xml", name):
         return scrub_table
+    if re.fullmatch(r"xl/pivotCache/pivotCache(?:Records|Definition)\d*\.xml", name):
+        return scrub_pivot_cache
+    if re.fullmatch(r"xl/externalLinks/externalLink\d*\.xml", name):
+        return scrub_external_link
+    if re.fullmatch(r"xl/externalLinks/_rels/externalLink\d*\.xml\.rels", name):
+        return scrub_link_target
     return None  # copied byte-for-byte (this is how VBA stays intact)
 
 def scrub_file(src, dst, keep_headers=False):
@@ -192,7 +255,10 @@ def scrub_file(src, dst, keep_headers=False):
             for item in zin.infolist():
                 data = zin.read(item)
                 handler = pick_handler(item.filename)
-                if handler:
+                if re.fullmatch(r"xl/media/[^/]+\.(?:png|jpe?g|gif|bmp)", item.filename, re.IGNORECASE):
+                    data = BLANK_PNG  # a picture can show anything: replace it with a blank one
+                    m.count["pictures"] += 1
+                elif handler:
                     data = handler(data.decode("utf-8"), m).encode("utf-8")
                 else:
                     untouched.append(item.filename)
@@ -237,7 +303,9 @@ def main(argv=None):
     print("  formula results removed:   %d" % counts["formula_results"])
     print("  comments/properties/charts cleaned: %d" % (
         counts["comments"] + counts["properties"] + counts["charts"]))
-    print("Kept as-is on purpose: formulas, sheet names, layout, VBA code.")
+    print("  pictures blanked: %d   pivot/external-link copies masked: %d" % (
+        counts["pictures"], counts["copies"]))
+    print("Kept as-is on purpose: formula structure, sheet names, layout, VBA code.")
     if args.keep_headers:
         print("Row 1 text was KEPT readable (--keep-headers). Check it holds no real names.")
     print("SANITIZATION STATUS: " + ("REVIEW_REQUIRED" if review else "PROCESSING_COMPLETE (not a safety certification)"))

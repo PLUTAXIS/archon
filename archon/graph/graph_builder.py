@@ -34,7 +34,7 @@ SKIP_RE = re.compile(
 STATIC_LHS_RE = re.compile(
     r'^(?:ThisWorkbook\.)?'
     r'(?:(?:Worksheets|Sheets)\s*\(\s*"([^"]+)"\s*\)\s*\.)?'
-    r'(?:ActiveSheet\.)?'
+    r'(?:ActiveSheet\.|Me\.)?'
     r'(Range|Cells)\s*\(([^()]*)\)\s*(?:\.(?:Value2?|Formula\w*))?\s*$',
     re.IGNORECASE,
 )
@@ -164,9 +164,12 @@ def _resolve_static(lhs, default_sheet):
     m = STATIC_LHS_RE.match(lhs.strip())
     if not m:
         return None, "target is not a plain Range/Cells call (variable, With, Offset, etc.)"
+    if not m.group(1) and re.search(r"\bActiveSheet\.", lhs, re.IGNORECASE):
+        # not the module's own sheet: whichever sheet is open when the macro runs
+        return None, "ActiveSheet: depends on which sheet is open when the macro runs"
     sheet = m.group(1) or default_sheet
     if not sheet:
-        return None, "sheet not known (ActiveSheet / no sheet given)"
+        return None, "sheet not known (no sheet named, and not in a sheet's own module)"
     kind, args = m.group(2).lower(), m.group(3)
     if kind == "range":
         am = RANGE_ARG_RE.match(args.strip())
@@ -228,7 +231,7 @@ def _add_vba(g, mod, idx):
 
 READ_EXPR_RE = re.compile(
     r'(?:(?:ThisWorkbook\.)?(?:Worksheets|Sheets)\s*\(\s*"[^"]+"\s*\)\s*\.)?'
-    r'(?:ActiveSheet\.)?(?:Range|Cells)\s*\([^()]*\)',
+    r'(?:ActiveSheet\.|Me\.)?(?:Range|Cells)\s*\([^()]*\)',
     re.IGNORECASE,
 )
 

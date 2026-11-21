@@ -19,14 +19,14 @@ jobs:
       - name: Install (Python 3.12, locked)
         run: uv sync --locked --python 3.12
       - name: Lint
-        # archon/ingest is tested below but not lint-gated yet (27 findings, mostly broad excepts).
         run: >-
           uv run ruff check
           archon/contracts archon/explain archon/formula archon/cluster archon/graph
-          archon/scrubber archon/api archon/risk archon/pipeline.py archon/names.py
+          archon/scrubber archon/api archon/risk archon/ingest archon/pipeline.py archon/names.py
           run_pipeline.py scripts/benchmark.py
-          tests/contracts tests/explain tests/test_pipeline.py tests/test_scorecard.py
-          tests/test_cluster_memo.py tests/test_names.py
+          tests/contracts tests/explain tests/ingest tests/test_pipeline.py tests/test_scorecard.py
+          tests/test_cluster_memo.py tests/test_names.py tests/test_jobs.py
+          tests/test_scrubber_privacy.py tests/test_severity_excel.py
       - name: Types
         run: uv run mypy --strict archon/contracts
       - name: Unit tests (formula, cluster, graph, scrubber, ingest, explain, contracts)
