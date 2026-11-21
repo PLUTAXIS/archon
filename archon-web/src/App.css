@@ -652,8 +652,22 @@ button:focus-visible, a:focus-visible {
 
 .block-heading {
   margin: 0 0 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.block-heading h4 {
+  margin: 0;
   font-family: var(--font-display);
   font-size: 1rem;
+}
+
+.block-heading span {
+  font-family: var(--font-code);
+  font-size: .72rem;
+  color: var(--text-secondary);
 }
 
 .table-wrap {
@@ -701,8 +715,16 @@ td {
 }
 
 .formula-location {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   color: var(--accent);
   white-space: nowrap;
+}
+
+.formula-location span {
+  color: var(--text-secondary);
+  white-space: normal;
 }
 
 .empty-state {
