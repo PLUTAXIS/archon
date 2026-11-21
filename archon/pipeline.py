@@ -45,7 +45,9 @@ from archon.explain.matcher import match_formula
 from archon.explain.risk import score_record, to_contract_risk
 from archon.explain.unmatched import rank_unmatched
 from archon.formula.r1c1 import parse_address, to_r1c1
-from archon.graph.graph_builder import build_graph
+from archon.graph.graph_builder import add_vba_reads, build_graph
+from archon.names import Table as NameTable
+from archon.names import bound_whole_columns, expand_names, named_cells, reference_names
 from archon.risk.scorecard import score_workbook
 
 DOWNSTREAM_SAMPLE = 10
@@ -63,18 +65,42 @@ def _label(key: CellKey) -> str:
 
 
 def _cell_graph(rows: list[Row], vba: Sequence[dict[str, str]]) -> nx.DiGraph:
+    # whole-column references (C:C) become C1:C<last used row> so the graph can follow them
+    last_row: dict[str, int] = defaultdict(int)
+    for s, a, _c in rows:
+        last_row[s] = max(last_row[s], parse_address(a)[0])
     formulas = [
-        {"sheet": s, "cell": a, "formula": c.strip()} for s, a, c in rows if c.strip().startswith("=")
+        {"sheet": s, "cell": a, "formula": bound_whole_columns(c.strip(), s, last_row)}
+        for s, a, c in rows
+        if c.strip().startswith("=")
     ]
-    return build_graph({"formulas": formulas, "vba": list(vba)})
+    g = build_graph({"formulas": formulas, "vba": list(vba)})
+    for module in vba:
+        add_vba_reads(g, module)
+    return g
 
 
-def _adjacency(g: nx.DiGraph) -> DependencyGraph:
-    """{cell: [cells that read it or are written by it]} for bugs and cycles."""
+def _adjacency(g: nx.DiGraph, rows: list[Row]) -> DependencyGraph:
+    """{cell: [cells that read it or are written by it]} for bugs and cycles.
+
+    The graph builder keeps a range over 2000 cells as one node; each real
+    cell inside such a range is linked to it here, so an override inside a
+    big range still shows what it breaks.
+    """
     adj: defaultdict[CellKey, list[CellKey]] = defaultdict(list)
     for u, v in g.edges():
         adj[_key(g, u)].append(_key(g, v))
-    # shortcut: a constant inside a range over 2000 cells (collapsed to one node) shows no downstream; trace range membership if that hides real impact.
+    big = [(d["sheet"], d["cell"]) for _n, d in g.nodes(data=True) if d.get("type") == "range"]
+    if big:
+        cells: defaultdict[str, list[tuple[int, int, str]]] = defaultdict(list)
+        for s, a, _c in rows:
+            cells[s].append((*parse_address(a), a))
+        for sheet, text in big:
+            start, end = text.split(":")
+            (r1, c1), (r2, c2) = parse_address(start), parse_address(end)
+            for r, c, a in cells.get(sheet, ()):
+                if r1 <= r <= r2 and c1 <= c <= c2:
+                    adj[(sheet, a)].append((sheet, text))
     return dict(adj)
 
 
@@ -261,7 +287,8 @@ def _dag(
         old = nodes.get(node_id)
         nodes[node_id] = Node(
             id=node_id, kind="input", sheet=sheet, r1c1="", anchor=f"{col}:{col}",
-            header=old.header if old else labels.cell(sheet, addr, prefer_row=False),
+            # the column's header, not the first cell's (that may be the header cell itself)
+            header=old.header if old else labels.whole_columns(sheet, col, col),
             member_count=(old.member_count or 0) + 1 if old else 1,
         )
         return node_id
@@ -330,16 +357,22 @@ def _spec(
     order = [m for c in steps for m in sorted(cond.nodes[c]["members"])]
 
     def name(node_id: str) -> str:
+        if node_id.startswith("VBA_UNKNOWN:"):  # e.g. VBA_UNKNOWN:Module1:L6
+            _, module, line = node_id.split(":")
+            return f"a cell chosen at run time ({module}, line {line.removeprefix('L')})"
         node = by_id[node_id]
         return f"{node.header} ({node_id})" if node.header else node_id
 
     sheets: dict[str, dict[str, Any]] = {}
-    macros: dict[str, list[str]] = defaultdict(list)
+    macros: dict[str, tuple[list[str], list[str]]] = {}
     for node_id in order:
         node = by_id[node_id]
         if node.sheet == "VBA":
             if node.kind == "input":  # a procedure
-                macros[node_id] = [name(t) for t in sorted(g.successors(node_id))]
+                macros[node_id] = (
+                    [name(t) for t in sorted(g.successors(node_id))],
+                    [name(t) for t in sorted(g.predecessors(node_id))],
+                )
             continue
         sheet = sheets.setdefault(node.sheet, {"name": node.sheet, "inputs": [], "calculations": []})
         used_by = [name(t) for t in sorted(g.successors(node_id))]
@@ -373,11 +406,47 @@ def _spec(
         })
     return {
         "sheets": [sheets[k] for k in sorted(sheets)],
-        "macros": [{"procedure": p, "writes_to": w} for p, w in sorted(macros.items())],
+        "macros": [
+            {"procedure": p, "writes_to": w, "reads_from": r} for p, (w, r) in sorted(macros.items())
+        ],
     }
 
 
 _ON_ERROR_RESUME = re.compile(r"^\s*On\s+Error\s+Resume\s+Next\b", re.IGNORECASE | re.MULTILINE)
+
+
+def _vba_findings(
+    vba: Sequence[dict[str, str]], g: nx.DiGraph, unknown_writes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Macro behaviour an auditor must see, each with where it happens.
+
+    - error_suppression: 'On Error Resume Next' hides every failure after it
+    - overwrites_formula: a macro writes a value into a cell that holds a formula
+    - dynamic_write: a macro writes to a cell decided at run time (untraceable)
+    """
+    found: list[dict[str, Any]] = []
+    for module in vba:
+        proc = "(module)"
+        for number, raw in enumerate(module["code"].splitlines(), start=1):
+            head = _PROC.match(raw)
+            if head:
+                proc = head[1]
+            if _ON_ERROR_RESUME.match(raw):
+                found.append({"kind": "error_suppression", "module": module["module"],
+                              "procedure": proc, "line": number, "text": raw.strip()})
+    for u, v, d in g.edges(data=True):
+        if d["label"] == "vba_write" and g.nodes[v].get("type") == "formula":
+            p = g.nodes[u]
+            found.append({"kind": "overwrites_formula", "module": p["module"],
+                          "procedure": p["procedure"], "cell": v,
+                          "text": f"writes a value into {v}, which holds the formula {g.nodes[v]['formula']}"})
+    found += [{"kind": "dynamic_write", **w} for w in unknown_writes]
+    rank = {"overwrites_formula": 0, "error_suppression": 1, "dynamic_write": 2}  # most damaging first
+    return sorted(found, key=lambda f: (rank[f["kind"]], f["module"], f["procedure"],
+                                        str(f.get("line", f.get("cell")))))
+
+
+_PROC = re.compile(r"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?:Sub|Function)\s+(\w+)", re.IGNORECASE)
 
 
 def _scorecard_counts(
@@ -420,6 +489,7 @@ def run_audit(
     vba: Sequence[dict[str, str]] = (),
     context: dict[str, int] | None = None,
     values: Mapping[CellKey, Any] | None = None,
+    names: NameTable | None = None,
 ) -> dict[str, Any]:
     """Run every analysis stage and return one JSON-ready result.
 
@@ -427,19 +497,28 @@ def run_audit(
     hidden_sheets, very_hidden_sheets and external_links (see run_extract).
     values maps formula cells to the result Excel cached for them, used to
     judge how far an override is from what its formula would give.
+    names (archon.names.reference_names) expands named ranges such as
+    TaxRate into the cells they stand for; the formulas shown keep the names.
     """
     rows = [(s, a, str(c)) for s, a, c in rows if str(c).strip()]
+    as_written = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
+    rows = [(s, a, expand_names(c.strip(), s, names or {})) for s, a, c in rows]
     clusters, constants, unparsed = cluster_cells_ast(rows)
     g = _cell_graph(rows, vba)
-    graph = _adjacency(g)
+    graph = _adjacency(g, rows)
     formulas = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
-    labels = Labels(rows)
+    labels = Labels(rows, named_cells(names or {}))
 
     found_bugs = find_override_bugs(rows, clusters, constants, graph=graph)
     bugs, severity_reasons = _ledger(found_bugs, values or {})
 
     cycles = []
-    for cycle in find_cycles(graph):
+    # Circular references are about formulas: a macro that reads and rewrites a
+    # cell (Range("A1") = Range("A1") + 1) is a stateful update, not a cycle.
+    formula_graph = {
+        k: [v for v in vs if v[0]] for k, vs in graph.items() if k[0]
+    }
+    for cycle in find_cycles(formula_graph):
         label, reason = suggest_classification(cycle, formulas)
         cycles.append({
             "members": sorted(_label(k) for k in cycle.members),
@@ -467,6 +546,7 @@ def run_audit(
         for _n, d in sorted(g.nodes(data=True))
         if d.get("type") == "vba_write_range_unknown"
     ]
+    vba_findings = _vba_findings(vba, g, unknown_writes)
     stats = summarise(clusters, constants)
     total_formulas = stats["formula_cells"] + len(unparsed)
     scorecard = score_workbook(
@@ -491,9 +571,10 @@ def run_audit(
         ],
         "cycles": cycles,
         "vba_unknown_writes": unknown_writes,
+        "vba_findings": vba_findings,
         "unparsed": [{"sheet": s, "cell": a, "formula": c} for s, a, c in unparsed],
         "graph": dag.model_dump(mode="json"),
-        "spec": _spec(dag, records, formulas),
+        "spec": _spec(dag, records, as_written),
         "report": report.model_dump(mode="json"),
     }
 
@@ -520,7 +601,8 @@ def run_extract(raw: RawExtract) -> dict[str, Any]:
         "external_links": len(raw.external_links),
     }
     values = {(c.sheet, c.address): c.cached_value for c in raw.cells if c.formula}
-    result = run_audit(rows, raw.workbook_id, vba, context, values)
+    names = reference_names(raw.defined_names, [s.name for s in sorted(raw.sheets, key=lambda s: s.index)])
+    result = run_audit(rows, raw.workbook_id, vba, context, values, names)
     # present the specification in the workbook's own sheet order
     order = {s.name: s.index for s in raw.sheets}
     result["spec"]["sheets"].sort(key=lambda x: (order.get(x["name"], len(order)), x["name"]))

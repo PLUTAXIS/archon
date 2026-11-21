@@ -23,8 +23,10 @@ jobs:
         run: >-
           uv run ruff check
           archon/contracts archon/explain archon/formula archon/cluster archon/graph
-          archon/scrubber archon/api archon/pipeline.py run_pipeline.py scripts/benchmark.py
-          tests/contracts tests/explain tests/test_pipeline.py
+          archon/scrubber archon/api archon/risk archon/pipeline.py archon/names.py
+          run_pipeline.py scripts/benchmark.py
+          tests/contracts tests/explain tests/test_pipeline.py tests/test_scorecard.py
+          tests/test_cluster_memo.py tests/test_names.py
       - name: Types
         run: uv run mypy --strict archon/contracts
       - name: Unit tests (formula, cluster, graph, scrubber, ingest, explain, contracts)

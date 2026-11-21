@@ -39,10 +39,19 @@ def test_relabel_names_cells_ranges_and_other_sheets():
     )
 
 
-def test_relabel_leaves_unlabelled_and_multi_column_refs_alone():
+def test_multi_column_ranges_are_named_by_their_headers():
     assert LB.relabel("Look up B4:C5 then Z99.", "S", prefer_row=False) == (
-        "Look up B4:C5 then Z99."
+        "Look up Price / Qty table (B4:C5) then Z99."
     )
+    # wide tables shorten to first ... last
+    assert LB.relabel("A4:D5", "S", prefer_row=False) == (
+        "Customer / … / Amount table (A4:D5)"
+    )
+
+
+def test_ranges_with_an_unlabelled_column_are_left_alone():
+    # column G has no header above row 2
+    assert LB.relabel("F2:G2", "S", prefer_row=False) == "F2:G2"
 
 
 def test_relabel_does_not_touch_parts_of_longer_tokens():
@@ -54,4 +63,10 @@ def test_relabel_does_not_touch_parts_of_longer_tokens():
 def test_relabel_never_renames_text_inside_quotes():
     assert LB.relabel("If B4 is “B4”, B4.", "S", prefer_row=False) == (
         "If Price (B4) is “B4”, Price (B4)."
+    )
+
+
+def test_whole_columns_are_named_by_their_header():
+    assert LB.relabel("Sum of D:D and B:C.", "S", prefer_row=False) == (
+        "Sum of Amount (D:D) and Price / Qty table (B:C)."
     )

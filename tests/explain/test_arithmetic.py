@@ -101,3 +101,11 @@ def test_conditions_and_text():
 def test_misleading_or_incomplete_calls_stay_unverified(formula):
     record, _ = _run(formula)
     assert record.status == "unverified"
+
+
+def test_risk_hidden_inside_iferror_counts():
+    _, risk = _run("=IFERROR(VLOOKUP(A2,F1:H20,3),0)")
+    assert risk.flags == ("APPROX_LOOKUP_DEFAULT", "ERROR_SUPPRESSED")
+    assert risk.score == 40
+    _, risk = _run("=IFERROR(C2*0.2,0)")
+    assert risk.flags == ("EMBEDDED_CONSTANT", "ERROR_SUPPRESSED")

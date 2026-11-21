@@ -87,6 +87,32 @@ function ScoreCard({ card }) {
   )
 }
 
+const MACRO_FINDING = {
+  error_suppression: { title: 'Errors are silenced', detail: 'After this line, failures are skipped without warning.' },
+  overwrites_formula: { title: 'Macro overwrites a formula', detail: 'Running the macro replaces a calculation with a fixed value.' },
+  dynamic_write: { title: 'Writes to a cell chosen at run time', detail: 'Which cell changes cannot be known without running the macro.' },
+}
+
+function MacroFindings({ findings }) {
+  return (
+    <div className="result-block">
+      <div className="block-heading"><h4>Macro findings</h4><span>{findings.length} found</span></div>
+      <div className="explain-list">
+        {findings.map((f, i) => (
+          <div className="explain-row" key={`${f.kind}-${f.module}-${f.procedure}-${f.line ?? f.cell}-${i}`}>
+            <div className="explain-meta">
+              <strong>{MACRO_FINDING[f.kind]?.title ?? f.kind}</strong>
+              <code>{f.module} · {f.procedure}{f.line ? `, line ${f.line}` : ''}{f.cell ? ` · ${f.cell}` : ''}</code>
+            </div>
+            <p className="explain-flags">{MACRO_FINDING[f.kind]?.detail}{f.reason ? ` (${f.reason})` : ''}</p>
+            <code className="spec-formula">{f.text}</code>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const VERDICT_TEXT = { logic: 'Intended calculation', error: 'Error to fix' }
 
 // Reviewer verdicts are kept in this browser, per workbook, so re-uploading
@@ -234,6 +260,8 @@ function AuditReport({ analysis }) {
 
       {cycles.length > 0 && <CycleReview cycles={cycles} workbookId={graph.workbook_id} />}
 
+      {analysis.vba_findings?.length > 0 && <MacroFindings findings={analysis.vba_findings} />}
+
       <div className="result-block">
         <div className="block-heading"><h4>Risky formulas</h4><span>{risky.length} flagged · highest first</span></div>
         {risky.length ? (
@@ -333,7 +361,11 @@ function Specification({ spec }) {
           <h5>Macros that write to the workbook</h5>
           <ul className="spec-inputs">
             {spec.macros.map((m) => (
-              <li key={m.procedure}><strong>{m.procedure}</strong> writes to {m.writes_to.join(', ')}</li>
+              <li key={m.procedure}>
+                <strong>{m.procedure}</strong>
+                {m.reads_from?.length > 0 && <> reads {m.reads_from.join(', ')};</>}
+                {m.writes_to.length > 0 ? <> writes to {m.writes_to.join(', ')}</> : <> writes nothing traceable</>}
+              </li>
             ))}
           </ul>
         </section>

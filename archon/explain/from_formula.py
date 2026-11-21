@@ -18,6 +18,7 @@ from archon.formula.parser import parse
 
 _SUPPORTED_OPS = frozenset({"+", "-", "*", "/", "&", "<", "<=", ">", ">=", "=", "<>"})
 _CELL = re.compile(r"^[A-Z]{1,3}\d+$")
+_COLUMN = re.compile(r"^[A-Z]{1,3}$")
 
 
 def _number(value: float) -> str:
@@ -53,6 +54,10 @@ def _convert(node: fa.Node) -> ex.Node:
         raise ValueError(f"unsupported unary operator: {node.op!r}")
     if isinstance(node, fa.BinOp):
         if node.op == ":" and isinstance(node.left, fa.Ref) and isinstance(node.right, fa.Ref):
+            left, right = (r.r1c1.replace("$", "").upper() for r in (node.left, node.right))
+            if _COLUMN.match(left) and _COLUMN.match(right):  # whole columns: C:C, Inputs!A:B
+                prefix = f"{node.left.sheet}!" if node.left.sheet else ""
+                return ex.Range(prefix + left, right)
             start, end = _address(node.left), _address(node.right)
             return ex.Range(start, end.split("!")[-1])
         if node.op not in _SUPPORTED_OPS:

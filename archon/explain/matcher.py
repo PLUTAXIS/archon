@@ -152,6 +152,8 @@ def _arg_text(node: Node, kind: str) -> str | None:
 
 
 _RANGE = re.compile(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$")
+_WHOLE_COLUMNS = re.compile(r"^([A-Z]+):([A-Z]+)$")
+_SHEET_ROWS = 1_048_576  # a whole column spans every row of the sheet
 
 
 def _col_number(letters: str) -> int:
@@ -163,8 +165,12 @@ def _col_number(letters: str) -> int:
 
 
 def _range_dims(text: str) -> tuple[int, int] | None:
-    """(rows, columns) of a range such as F1:H20 or Inputs!F1:H20, or None if unreadable."""
-    found = _RANGE.match(text.rsplit("!", 1)[-1])
+    """(rows, columns) of F1:H20, Inputs!F1:H20 or whole columns F:H; None if unreadable."""
+    text = text.rsplit("!", 1)[-1]
+    whole = _WHOLE_COLUMNS.match(text)
+    if whole:
+        return _SHEET_ROWS, abs(_col_number(whole[2]) - _col_number(whole[1])) + 1
+    found = _RANGE.match(text)
     if found is None:
         return None
     col1, row1, col2, row2 = found.groups()
@@ -210,6 +216,16 @@ def _match_arg(node: Node, want: Spec) -> Captured | None:
     text = _arg_text(node, kind)
     if text is None:
         return None
+    if kind == "expr":
+        # Record idioms and typed-in numbers inside the expression, so an
+        # approximate lookup hidden in IFERROR(...) still counts toward risk.
+        embedded: list[str] = []
+        constants: list[str] = []
+        if _phrase(node, embedded, constants) is not None:
+            if constants:
+                embedded.append("arithmetic_constant")
+            if embedded:
+                return {want["as"]: text, "embedded": ",".join(embedded)}
     return {want["as"]: text}
 
 
@@ -318,7 +334,7 @@ def _phrase(
     if isinstance(node, Ref):
         return node.address
     if isinstance(node, Range):
-        return f"{node.start}:{node.end}"
+        return f"{node.start}:{node.end}"  # whole columns stay as written: C:C
     if isinstance(node, Str):
         return f"“{node.text}”"
     if isinstance(node, BinOp):

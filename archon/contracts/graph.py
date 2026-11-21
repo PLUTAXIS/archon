@@ -36,7 +36,7 @@ class Edge(BaseModel):
     model_config = {"extra": "forbid"}
     source: str
     target: str
-    origin: Literal["formula", "vba_write"]
+    origin: Literal["formula", "vba_write", "vba_read"]
     confidence: Literal["static", "dynamic"]
     vba_ref: VbaRef | None = None
 

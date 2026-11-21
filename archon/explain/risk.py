@@ -1,10 +1,10 @@
 """Risk scoring: pure function from ExplanationRecord to a printable score.
 
 Rules live in risk_rules.yaml (data, not code). Deterministic: sorted,
-set-free, timestamp-free. Idioms nested inside an arithmetic formula are
-scored too (the matcher records their pattern ids in captured_vars
-"embedded"). Known limitation (accepted, option A): a volatile/approx-lookup
-call nested inside IFERROR is still invisible to a record-only scorer.
+set-free, timestamp-free. Idioms nested inside a formula (in arithmetic, a
+function, or IFERROR's expression) are scored too: the matcher records their
+pattern ids in captured_vars "embedded". Known limitation: nesting the
+matcher cannot read (an unknown function around a lookup) stays invisible.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _SCORE_CAP = 100
 _RULES_FILE = Path(__file__).parent / "risk_rules.yaml"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)  # sortable: a record can carry several components
 class RiskComponent:
     """A single named contribution to the risk score."""
 

@@ -52,7 +52,7 @@ def test_iferror_with_reference_fallback() -> None:
         _run("e2", "D2", "=IFERROR(SUM(A1:A10),E2)"), "e2", "error_suppression",
         "error_suppression",
         "Evaluates the total of A1:A10 and replaces any error with E2.",
-        {"expression": "SUM(A1:A10)", "fallback": "E2"},
+        {"expression": "SUM(A1:A10)", "fallback": "E2", "embedded": "sum"},
     )
 
 

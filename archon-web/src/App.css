@@ -1314,6 +1314,7 @@ td {
 
 .map-canvas .map-edge path { stroke: var(--border-strong); }
 .map-canvas .map-edge--vba_write path { stroke: var(--map-vba); stroke-dasharray: 6 4; }
+.map-canvas .map-edge--vba_read path { stroke: var(--map-vba); stroke-dasharray: 2 4; opacity: .7; }
 .map-canvas .map-edge--hot path { stroke: var(--map-bug); stroke-width: 2; }
 .map-canvas .map-edge--dim { opacity: .12; }
 

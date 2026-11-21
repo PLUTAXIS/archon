@@ -226,6 +226,50 @@ def _add_vba(g, mod, idx):
             g.add_edge(pid, nid, label="vba_write")
 
 
+READ_EXPR_RE = re.compile(
+    r'(?:(?:ThisWorkbook\.)?(?:Worksheets|Sheets)\s*\(\s*"[^"]+"\s*\)\s*\.)?'
+    r'(?:ActiveSheet\.)?(?:Range|Cells)\s*\([^()]*\)',
+    re.IGNORECASE,
+)
+
+
+def add_vba_reads(g, mod):
+    """Add 'vba_read' edges (cell -> procedure) for static cell reads in VBA.
+
+    A read is any plain Range/Cells expression on a line other than the cell
+    the line writes to. Same resolution rules as writes: a cell is only
+    linked when its sheet and address are fixed in the code. Kept out of
+    build_graph so this CLI's edge-label validation is unchanged.
+    """
+    module, code = _need(mod, 0, "vba", ("module", "code"))
+    default_sheet = mod.get("default_sheet") or None
+    proc = "(module)"
+    for raw in code.splitlines():
+        line = _strip_comment(raw).strip()
+        if not line:
+            continue
+        pm = PROC_RE.match(line)
+        if pm:
+            proc = pm.group(1)
+            continue
+        im = IF_THEN_RE.match(line)
+        body_at = im.start(1) if im else 0
+        lhs = _lhs_of_assignment(line[body_at:])
+        written = (body_at, body_at + len(lhs)) if lhs is not None and _is_write(lhs) else None
+        for m in READ_EXPR_RE.finditer(line):
+            if written and written[0] <= m.start() < written[1]:
+                continue  # the write target itself, not a read
+            target, _reason = _resolve_static(m.group(0), default_sheet)
+            if target is None:
+                continue
+            pid = "VBA:%s.%s" % (module, proc)
+            if pid not in g:
+                g.add_node(pid, type="vba_proc", module=module, procedure=proc)
+            sheet, a, b = target
+            for nid in _range_ids(g, sheet, a, b):
+                g.add_edge(nid, pid, label="vba_read")
+
+
 def build_graph(data):
     if not isinstance(data, dict):
         raise ValueError("input must be a JSON object")

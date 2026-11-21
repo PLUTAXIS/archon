@@ -32,7 +32,7 @@ def test_unary_minus_and_percent_become_numbers():
 
 @pytest.mark.parametrize(
     "formula",
-    ["=A1^2", "=TaxRate*A1", "=IF(A1,TRUE,FALSE)", "=-A1", "=SUM(A:A)", "=(("],
+    ["=A1^2", "=TaxRate*A1", "=IF(A1,TRUE,FALSE)", "=-A1", "=SUM(A1:B)", "=(("],
 )
 def test_unrepresentable_formulas_raise_instead_of_guessing(formula):
     with pytest.raises(ValueError):
@@ -46,3 +46,12 @@ def test_text_and_joining_are_represented():
 def test_sheet_qualified_formula_now_gets_explained():
     record = match_formula("n", "C2", explain_tree("=Inputs!B2*Inputs!C2"))
     assert record.status == "matched"
+
+
+def test_whole_columns_are_represented_and_read_aloud():
+    assert explain_tree("=SUM(C:C)") == Call("SUM", (Range("C", "C"),))
+    record = match_formula("n", "D2", explain_tree("=SUM(Inputs!$A:$B)"))
+    assert record.plain_english == "Sum of Inputs!A:B."
+    # a lookup into whole columns is recognised (table size check knows A:B is 2 wide)
+    record = match_formula("n", "D2", explain_tree("=VLOOKUP(A2,Inputs!$A:$B,2,0)"))
+    assert record.evidence.pattern_id == "vlookup_exact"

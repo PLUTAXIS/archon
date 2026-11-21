@@ -8,11 +8,14 @@ from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 from openpyxl import Workbook
+from openpyxl.workbook.defined_name import DefinedName as OpenpyxlName
 
 from archon.api.main import OLE_MAGIC, audit_workbook
+from archon.contracts.extract import DefinedName
 from archon.contracts.graph import DagGraph
 from archon.contracts.report import ReportDocument
 from archon.ingest.xlsx import extract
+from archon.names import reference_names
 from archon.pipeline import run_audit, run_extract
 
 WID = UUID(int=1)
@@ -94,6 +97,99 @@ class RunAuditTests(unittest.TestCase):
         self.assertIn({"signal": "cycle", "label": "circular references", "count": 1, "points": 20},
                       structural)
         self.assertGreater(card["score"], 0)
+
+
+class NamesAndColumnsTests(unittest.TestCase):
+    def setUp(self):
+        self.names = reference_names(
+            [DefinedName(name="TaxRate", scope="workbook", refers_to="In!$B$1")], ["S", "In"]
+        )
+        rows = [("In", "A1", "Tax rate"), ("In", "B1", "0.2"), ("S", "A1", "Amount")]
+        rows += [("S", f"A{r}", str(r)) for r in range(2, 12)]
+        rows += [("S", "B2", "=A2*TaxRate"), ("S", "C1", "Total"), ("S", "C2", "=SUM(A:A)")]
+        self.out = run_audit(rows, WID, names=self.names)
+        self.edges = {(e["source"], e["target"]) for e in self.out["graph"]["edges"]}
+        self.text = {e["node_id"]: e["plain_english"]
+                     for s in self.out["report"]["sections"] for e in s["entries"]}
+
+    def test_named_input_is_a_dependency_and_keeps_its_name(self):
+        self.assertIn(("In!B:B", "S!B2"), self.edges)
+        # column B has no header, so no "Label:" prefix; the named input is named
+        self.assertEqual(self.text["S!B2"], "Product of Amount (A2) and TaxRate (In!B1).")
+
+    def test_whole_column_total_depends_on_the_column(self):
+        self.assertIn(("S!A:A", "S!C2"), self.edges)
+        self.assertEqual(self.text["S!C2"], "Total: sum of Amount (A:A).")
+
+    def test_spec_shows_the_formula_as_written(self):
+        calc = {c["id"]: c for c in self.out["spec"]["sheets"][1]["calculations"]}
+        self.assertEqual(calc["S!B2"]["formula"], "=A2*TaxRate")
+
+    def test_override_inside_a_huge_range_shows_its_impact(self):
+        rows = [("S", f"A{r}", f"=B{r}*2") for r in range(1, 2501)]
+        rows[1199] = ("S", "A1200", "777")  # typed over, inside a 2,500-cell range
+        rows += [("S", f"B{r}", "1") for r in range(1, 2501)] + [("S", "C1", "=SUM(A1:A2500)")]
+        (bug,) = run_audit(rows, WID)["bugs"]
+        self.assertEqual(bug["address"], "A1200")
+        self.assertEqual(bug["downstream_sample"], ["S!A1:A2500", "S!C1"])
+
+    def test_defined_names_flow_through_upload(self):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "S"
+        ws["A1"], ws["A2"], ws["B2"] = "Amount", 5, "=A2*TaxRate"
+        wb.create_sheet("In")["B1"] = 0.2
+        wb.defined_names["TaxRate"] = OpenpyxlName("TaxRate", attr_text="In!$B$1")
+        buf = BytesIO()
+        wb.save(buf)
+        report = _upload(buf.getvalue())["analysis"]["report"]
+        text = {e["node_id"]: e["plain_english"] for s in report["sections"] for e in s["entries"]}
+        self.assertIn("TaxRate (In!B1)", text["S!B2"])
+
+
+MACRO = """Sub Update()
+    On Error Resume Next
+    x = Worksheets("S").Range("A2").Value * 2
+    Worksheets("S").Range("C3").Value = x
+    If Worksheets("S").Range("A3").Value > 0 Then Worksheets("S").Range("B9").Value = 1
+    Range("A" & i).Value = 5
+End Sub
+Sub Bump()
+    Worksheets("S").Range("A1").Value = Worksheets("S").Range("A1").Value + 1
+End Sub"""
+
+
+class VbaFindingsTests(unittest.TestCase):
+    def setUp(self):
+        self.out = run_audit(_rows(), WID, vba=[{"module": "M", "code": MACRO}])
+        self.edges = {(e["source"], e["target"], e["origin"]) for e in self.out["graph"]["edges"]}
+
+    def test_static_reads_become_edges_but_the_write_target_does_not(self):
+        self.assertIn(("S!A:A", "VBA:M.Update", "vba_read"), self.edges)  # A2 and A3 (in the If)
+        self.assertNotIn(("S!C2:C11", "VBA:M.Update", "vba_read"), self.edges)  # C3 is written
+
+    def test_findings_name_each_problem_and_where_it_is(self):
+        kinds = {(f["kind"], f["procedure"], f.get("line"), f.get("cell"))
+                 for f in self.out["vba_findings"]}
+        self.assertIn(("error_suppression", "Update", 2, None), kinds)
+        self.assertIn(("overwrites_formula", "Update", None, "S!C3"), kinds)
+        self.assertIn(("dynamic_write", "Update", 6, None), kinds)
+
+    def test_a_macro_updating_a_cell_is_not_a_circular_reference(self):
+        cycles = [c["members"] for c in self.out["cycles"]]
+        self.assertEqual(cycles, [["S!E1", "S!F1"]])  # only the formula cycle
+
+    def test_spec_lists_what_each_macro_reads_and_writes(self):
+        macros = {m["procedure"]: m for m in self.out["spec"]["macros"]}
+        update = macros["VBA:M.Update"]
+        self.assertIn("Price (S!A:A)", update["reads_from"])
+        self.assertIn("a cell chosen at run time (M, line 6)", update["writes_to"])
+        self.assertTrue(any("C2:C11" in w for w in update["writes_to"]))
+        DagGraph.model_validate(self.out["graph"])
+
+    def test_findings_listed_most_damaging_first(self):
+        kinds = [f["kind"] for f in self.out["vba_findings"]]
+        self.assertEqual(kinds, ["overwrites_formula", "error_suppression", "dynamic_write"])
 
 
 class AffectedBlocksTests(unittest.TestCase):
