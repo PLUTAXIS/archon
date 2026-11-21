@@ -983,6 +983,14 @@ td {
   white-space: nowrap;
 }
 
+.sev-reasons {
+  margin: 4px 0 0;
+  padding: 0 0 0 14px;
+  font-size: .68rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 /* ---------- Scorecard ---------- */
 .scorecard {
   display: grid;
@@ -1105,6 +1113,98 @@ td {
 @media (max-width: 650px) {
   .scorecard { grid-template-columns: 1fr; }
   .scorecard-axes { grid-template-columns: 1fr; }
+}
+
+/* ---------- Specification ---------- */
+.spec > summary {
+  margin: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.spec > summary::-webkit-details-marker { display: none; }
+.spec > summary h4::before { content: "+ "; color: var(--accent); }
+.spec[open] > summary h4::before { content: "− "; }
+.spec[open] > summary { margin-bottom: 15px; }
+
+.spec-sheet + .spec-sheet {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.spec-sheet h5 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.spec-sheet h6 {
+  margin: 14px 0 6px;
+  color: var(--text-secondary);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.spec-inputs {
+  margin: 0;
+  padding-left: 18px;
+  font-size: .8rem;
+  line-height: 1.6;
+}
+
+.spec-inputs code,
+.spec-head code { color: var(--text-secondary); font-family: var(--font-code); font-size: .7rem; }
+
+.spec-calcs {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.spec-calcs > li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.spec-calcs p {
+  margin: 4px 0 0;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.spec-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.spec-tag {
+  padding: 1px 6px;
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid currentColor;
+}
+
+.spec-risk { color: #FFB020; }
+.spec-override .spec-head strong { color: #FF5A5A; }
+
+.spec-formula {
+  display: inline-block;
+  margin-top: 4px;
+  font-family: var(--font-code);
+  font-size: .72rem;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.spec-links {
+  color: var(--text-secondary);
+  font-size: .74rem !important;
 }
 
 /* ---------- Dependency map ---------- */
@@ -1296,6 +1396,13 @@ td {
   .explain-flags,
   .scorecard-axis li span,
   .explain-meta strong { color: #111 !important; }
+
+  .spec > summary h4::before { content: none; }
+  .spec-sheet { break-before: page; }
+  .spec-calcs > li { break-inside: avoid; }
+  .spec-formula,
+  .spec-tag,
+  .spec-override .spec-head strong { color: #111 !important; }
 
   thead { display: table-header-group; }
   .table-wrap { overflow: visible; }

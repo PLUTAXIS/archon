@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -126,8 +126,45 @@ def _explain(
     return records, parsed
 
 
-def _ledger(bugs: list[Bug]) -> list[BugLedgerEntry]:
-    """Bugs -> Contract C bug ledger entries, ordered by sheet then position."""
+def _severity(b: Bug, values: Mapping[CellKey, Any]) -> list[str]:
+    """Aggravating factors of one override, each a plain-English reason.
+
+    Severity is 1 + the number of reasons (max 5): it feeds other cells, it
+    feeds 10+, it reaches another sheet, and the typed value is far (beyond
+    0.5x-2x, or the opposite sign) from what the formula beside it produced,
+    using the value Excel cached when the file was last saved.
+    """
+    reasons = []
+    n = len(b.downstream)
+    if n:
+        reasons.append(f"feeds {n} other cell{'s' if n != 1 else ''}")
+    if n >= 10:
+        reasons.append("wide blast radius (10 or more cells)")
+    other = sorted({s for s, _ in b.downstream if s and s != b.sheet})
+    if other:
+        reasons.append(f"reaches other sheets: {', '.join(other)}")
+    expected = values.get((b.sheet, b.example_formula_cell))
+    try:
+        typed = float(b.hardcoded_value)
+    except ValueError:
+        typed = None
+    if (
+        isinstance(expected, int | float) and not isinstance(expected, bool)
+        and expected and typed and not 0.5 <= typed / expected <= 2
+    ):
+        reasons.append(
+            f"typed value {b.hardcoded_value} is far from the {expected:g} "
+            f"the formula in {b.example_formula_cell} produced"
+        )
+    return reasons
+
+
+def _ledger(
+    bugs: list[Bug], values: Mapping[CellKey, Any]
+) -> tuple[list[BugLedgerEntry], dict[str, list[str]]]:
+    """Bugs -> Contract C bug ledger entries (sheet then position order), plus
+    the reasons behind each entry's severity, keyed by bug id."""
+    reasons: dict[str, list[str]] = {}
 
     def pos(b: Bug) -> tuple[str, int, int]:
         return (b.sheet, *parse_address(b.cell))
@@ -139,9 +176,11 @@ def _ledger(bugs: list[Bug]) -> list[BugLedgerEntry]:
         except ValueError:
             observed = b.hardcoded_value
         n = len(b.downstream)
+        bug_id = f"BUG-{i:03d}"
+        reasons[bug_id] = _severity(b, values)
         entries.append(
             BugLedgerEntry(
-                bug_id=f"BUG-{i:03d}",
+                bug_id=bug_id,
                 type="HARDCODED_OVERRIDE",
                 sheet=b.sheet,
                 address=b.cell,
@@ -150,11 +189,10 @@ def _ledger(bugs: list[Bug]) -> list[BugLedgerEntry]:
                 cluster_id=b.cluster_id,
                 downstream_node_count=n,
                 downstream_sample=[_label(k) for k in b.downstream[:DOWNSTREAM_SAMPLE]],
-                # shortcut: severity is a placeholder (5 = wide blast radius, 4 = some, 3 = none); replace with Sneha's risk weights when agreed.
-                severity=5 if n >= 10 else 4 if n else 3,
+                severity=1 + len(reasons[bug_id]),
             )
         )
-    return entries
+    return entries, reasons
 
 
 def _dag(
@@ -265,6 +303,75 @@ def _parse_label(label: str) -> CellKey:
     return (sheet, addr)
 
 
+def _spec(
+    dag: DagGraph,
+    records: list[ExplanationRecord],
+    formulas: dict[CellKey, str],
+) -> dict[str, Any]:
+    """The specification document: per sheet, its inputs and every calculation
+    in dependency order (inputs before the formulas that read them), with its
+    explanation, exact formula, risk, what it depends on and what uses it.
+    Built only from verified pipeline output; nothing is generated or guessed.
+    """
+    by_id = {n.id: n for n in dag.nodes}
+    record = {r.node_id: r for r in records}
+    bug_at = {f"{b.sheet}!{b.address}": b for b in dag.bugs}
+    g = nx.DiGraph()
+    g.add_nodes_from(by_id)
+    g.add_edges_from((e.source, e.target) for e in dag.edges)
+    # circular references collapse to one step, so every workbook has an order
+    cond = nx.condensation(g)
+    steps = nx.lexicographical_topological_sort(cond, key=lambda c: min(cond.nodes[c]["members"]))
+    order = [m for c in steps for m in sorted(cond.nodes[c]["members"])]
+
+    def name(node_id: str) -> str:
+        node = by_id[node_id]
+        return f"{node.header} ({node_id})" if node.header else node_id
+
+    sheets: dict[str, dict[str, Any]] = {}
+    macros: dict[str, list[str]] = defaultdict(list)
+    for node_id in order:
+        node = by_id[node_id]
+        if node.sheet == "VBA":
+            if node.kind == "input":  # a procedure
+                macros[node_id] = [name(t) for t in sorted(g.successors(node_id))]
+            continue
+        sheet = sheets.setdefault(node.sheet, {"name": node.sheet, "inputs": [], "calculations": []})
+        used_by = [name(t) for t in sorted(g.successors(node_id))]
+        if node.kind == "input":
+            sheet["inputs"].append({"id": node_id, "label": node.header, "cells": node.member_count,
+                                    "used_by": used_by})
+            continue
+        rec = record.get(node_id)
+        risk = score_record(rec) if rec else None
+        bug = bug_at.get(node_id)
+        explanation = rec.plain_english if rec else None
+        if bug:
+            explanation = (
+                f"{bug.bug_id}: the value {_value_text(bug.observed)} is typed in where the rest of "
+                f"this column uses the formula {bug.expected_r1c1} (R1C1)."
+            )
+        sheet["calculations"].append({
+            "id": node_id,
+            "label": node.header,
+            "cells": node.member_ranges or [node.anchor],
+            "count": node.member_count or 1,
+            "formula": formulas.get((node.sheet, node.anchor), node.r1c1),
+            "explanation": explanation,
+            "risk_score": risk.score if risk else 0,
+            "risk_flags": list(risk.flags) if risk else [],
+            "depends_on": [name(p) for p in sorted(g.predecessors(node_id))],
+            "used_by": used_by,
+            "is_output": not used_by,
+            # flagged cells: a typed-over value (no formula) or a formula we couldn't parse
+            "kind": ("override" if not node.r1c1 else "unparsed") if node.kind == "cell" else node.kind,
+        })
+    return {
+        "sheets": [sheets[k] for k in sorted(sheets)],
+        "macros": [{"procedure": p, "writes_to": w} for p, w in sorted(macros.items())],
+    }
+
+
 _ON_ERROR_RESUME = re.compile(r"^\s*On\s+Error\s+Resume\s+Next\b", re.IGNORECASE | re.MULTILINE)
 
 
@@ -307,11 +414,14 @@ def run_audit(
     workbook_id: UUID,
     vba: Sequence[dict[str, str]] = (),
     context: dict[str, int] | None = None,
+    values: Mapping[CellKey, Any] | None = None,
 ) -> dict[str, Any]:
     """Run every analysis stage and return one JSON-ready result.
 
     context carries workbook facts the cells don't show: counts of
     hidden_sheets, very_hidden_sheets and external_links (see run_extract).
+    values maps formula cells to the result Excel cached for them, used to
+    judge how far an override is from what its formula would give.
     """
     rows = [(s, a, str(c)) for s, a, c in rows if str(c).strip()]
     clusters, constants, unparsed = cluster_cells_ast(rows)
@@ -320,7 +430,9 @@ def run_audit(
     formulas = {(s, a): c.strip() for s, a, c in rows if c.strip().startswith("=")}
     labels = Labels(rows)
 
-    bugs = _ledger(find_override_bugs(rows, clusters, constants, graph=graph))
+    bugs, severity_reasons = _ledger(
+        find_override_bugs(rows, clusters, constants, graph=graph), values or {}
+    )
 
     cycles = []
     for cycle in find_cycles(graph):
@@ -360,11 +472,15 @@ def run_audit(
             "explained_clusters": sum(r.status == "matched" for r in records),
             "unverified_clusters": sum(r.status == "unverified" for r in records),
         },
-        "bugs": [b.model_dump(mode="json") for b in bugs],
+        "bugs": [
+            {**b.model_dump(mode="json"), "severity_reasons": severity_reasons[b.bug_id]}
+            for b in bugs
+        ],
         "cycles": cycles,
         "vba_unknown_writes": unknown_writes,
         "unparsed": [{"sheet": s, "cell": a, "formula": c} for s, a, c in unparsed],
         "graph": dag.model_dump(mode="json"),
+        "spec": _spec(dag, records, formulas),
         "report": report.model_dump(mode="json"),
     }
 
@@ -390,7 +506,11 @@ def run_extract(raw: RawExtract) -> dict[str, Any]:
         "very_hidden_sheets": sum(s.visibility == "veryHidden" for s in raw.sheets),
         "external_links": len(raw.external_links),
     }
-    result = run_audit(rows, raw.workbook_id, vba, context)
+    values = {(c.sheet, c.address): c.cached_value for c in raw.cells if c.formula}
+    result = run_audit(rows, raw.workbook_id, vba, context, values)
+    # present the specification in the workbook's own sheet order
+    order = {s.name: s.index for s in raw.sheets}
+    result["spec"]["sheets"].sort(key=lambda x: (order.get(x["name"], len(order)), x["name"]))
     result["extract"] = {
         "source": raw.source.model_dump(mode="json"),
         "sheets": [

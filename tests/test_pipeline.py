@@ -96,6 +96,71 @@ class RunAuditTests(unittest.TestCase):
         self.assertGreater(card["score"], 0)
 
 
+class SeverityTests(unittest.TestCase):
+    def test_local_override_with_plausible_value_is_minor(self):
+        (bug,) = run_audit(_rows(), WID, values={("S", "C5"): 15.0})["bugs"]
+        # C6 typed 145000 next to a formula that gave 15: far off, feeds D12
+        self.assertEqual(bug["severity_reasons"][0], "feeds 1 other cell")
+        self.assertIn("far from the 15", bug["severity_reasons"][1])
+        self.assertEqual(bug["severity"], 3)
+
+    def test_value_close_to_the_formula_result_is_not_an_outlier(self):
+        (bug,) = run_audit(_rows(), WID, values={("S", "C5"): 140000.0})["bugs"]
+        self.assertEqual(bug["severity_reasons"], ["feeds 1 other cell"])
+        self.assertEqual(bug["severity"], 2)
+
+    def test_wide_cross_sheet_impact_raises_severity(self):
+        rows = _rows() + [("R", f"A{r}", f"=S!D12*{r}") for r in range(1, 11)]
+        (bug,) = run_audit(rows, WID)["bugs"]
+        self.assertEqual(bug["severity_reasons"], [
+            "feeds 11 other cells", "wide blast radius (10 or more cells)",
+            "reaches other sheets: R",
+        ])
+        self.assertEqual(bug["severity"], 4)
+
+
+class SpecTests(unittest.TestCase):
+    def setUp(self):
+        (self.sheet,) = run_audit(_rows(), WID)["spec"]["sheets"]
+        self.calc = {c["id"]: c for c in self.sheet["calculations"]}
+        self.order = [c["id"] for c in self.sheet["calculations"]]
+
+    def test_inputs_listed_with_their_users(self):
+        inputs = {i["id"]: i for i in self.sheet["inputs"]}
+        self.assertEqual(inputs["S!A:A"]["label"], "Price")
+        self.assertEqual(inputs["S!A:A"]["used_by"], ["Amount (S!C2:C11)"])
+
+    def test_calculations_come_after_what_they_read(self):
+        self.assertLess(self.order.index("S!C2:C11"), self.order.index("S!D12"))
+        self.assertLess(self.order.index("S!C6"), self.order.index("S!D12"))
+
+    def test_entry_carries_explanation_formula_and_links(self):
+        block = self.calc["S!C2:C11"]
+        self.assertEqual(block["explanation"], "Amount: product of Price (A2) and Qty (B2).")
+        self.assertEqual(block["formula"], "=A2*B2")
+        self.assertEqual(block["cells"], ["C2:C5", "C7:C11"])
+        self.assertIn("S!D12", block["used_by"][0])
+
+    def test_override_is_explained_and_points_to_the_ledger(self):
+        override = self.calc["S!C6"]
+        self.assertEqual(override["kind"], "override")
+        self.assertTrue(override["explanation"].startswith("BUG-001: the value 145000 is typed in"))
+
+    def test_final_results_are_marked_as_outputs(self):
+        self.assertTrue(self.calc["S!D12"]["is_output"])
+        self.assertFalse(self.calc["S!C2:C11"]["is_output"])
+
+    def test_sheets_follow_workbook_order(self):
+        wb = Workbook()
+        wb.active.title = "Zeta"
+        wb.active["A1"] = "=1+1"
+        wb.create_sheet("Alpha")["A1"] = "=Zeta!A1*2"
+        buf = BytesIO()
+        wb.save(buf)
+        spec = _upload(buf.getvalue())["analysis"]["spec"]
+        self.assertEqual([s["name"] for s in spec["sheets"]], ["Zeta", "Alpha"])
+
+
 class GraphContractTests(unittest.TestCase):
     def setUp(self):
         self.graph = DagGraph.model_validate(run_audit(_rows(), WID)["graph"])

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import DependencyMap from './components/DependencyMap'
 
@@ -132,7 +132,12 @@ function AuditReport({ analysis }) {
                     <td><code>{String(b.observed)}</code></td>
                     <td><code>{b.expected_r1c1}</code></td>
                     <td title={b.downstream_sample.join(', ')}>{b.downstream_node_count}</td>
-                    <td>{b.severity}/5</td>
+                    <td>
+                      <strong>{b.severity}/5</strong>
+                      {b.severity_reasons?.length > 0 && (
+                        <ul className="sev-reasons">{b.severity_reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                      )}
+                    </td>
                     <td className="no-print">
                       <button
                         className="text-button"
@@ -208,7 +213,78 @@ function AuditReport({ analysis }) {
           </p>
         )}
       </div>
+
+      {analysis.spec && <Specification spec={analysis.spec} />}
     </>
+  )
+}
+
+function Specification({ spec }) {
+  const total = spec.sheets.reduce((n, s) => n + s.calculations.length, 0)
+  const ref = useRef(null)
+
+  // The printed audit pack always includes the full specification.
+  useEffect(() => {
+    const open = () => ref.current?.setAttribute('open', '')
+    window.addEventListener('beforeprint', open)
+    return () => window.removeEventListener('beforeprint', open)
+  }, [])
+
+  return (
+    <details className="result-block spec" ref={ref}>
+      <summary className="block-heading">
+        <h4>Specification</h4>
+        <span>{spec.sheets.length} sheets · {total} calculations · in dependency order</span>
+      </summary>
+      {spec.sheets.map((sheet) => (
+        <section className="spec-sheet" key={sheet.name}>
+          <h5>{sheet.name}</h5>
+          {sheet.inputs.length > 0 && (
+            <>
+              <h6>Inputs</h6>
+              <ul className="spec-inputs">
+                {sheet.inputs.map((i) => (
+                  <li key={i.id}>
+                    <strong>{i.label ?? i.id}</strong> <code>{i.id}</code> · {i.cells} cell{i.cells === 1 ? '' : 's'}
+                    {i.used_by.length > 0 && <> · used by {i.used_by.join(', ')}</>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {sheet.calculations.length > 0 && (
+            <>
+              <h6>Calculations</h6>
+              <ol className="spec-calcs">
+                {sheet.calculations.map((c) => (
+                  <li key={c.id} className={c.kind === 'override' ? 'spec-override' : undefined}>
+                    <div className="spec-head">
+                      <strong>{c.label ?? c.id}</strong>
+                      <code>{c.cells.join(', ')}</code>
+                      {c.is_output && <span className="spec-tag">Output</span>}
+                      {c.risk_score > 0 && <span className="spec-tag spec-risk">Risk {c.risk_score}</span>}
+                    </div>
+                    <p>{c.explanation ?? 'Not explained yet: no verified pattern matches this formula.'}</p>
+                    {c.formula && <code className="spec-formula">{c.formula}</code>}
+                    {c.depends_on.length > 0 && <p className="spec-links">Uses {c.depends_on.join(', ')}</p>}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </section>
+      ))}
+      {spec.macros.length > 0 && (
+        <section className="spec-sheet">
+          <h5>Macros that write to the workbook</h5>
+          <ul className="spec-inputs">
+            {spec.macros.map((m) => (
+              <li key={m.procedure}><strong>{m.procedure}</strong> writes to {m.writes_to.join(', ')}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </details>
   )
 }
 

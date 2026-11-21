@@ -147,6 +147,23 @@ def cluster_id_for(formula: str, addr: str) -> str:
     return blake3.blake3(_canonical_ast_string(canonical_ast).encode("utf-8")).hexdigest()
 
 
+def _memo_cluster_id(memo: dict[str, str | ValueError], formula: str, addr: str) -> str:
+    """cluster_id_for(), computed once per distinct R1C1 text."""
+    try:
+        key = to_r1c1(formula, addr)
+    except ValueError:
+        return cluster_id_for(formula, addr)  # can't key it: compute directly
+    if key not in memo:
+        try:
+            memo[key] = cluster_id_for(formula, addr)
+        except ValueError as exc:  # ParseError is a ValueError
+            memo[key] = exc
+    found = memo[key]
+    if isinstance(found, ValueError):
+        raise found
+    return found
+
+
 def cluster_cells_ast(
     rows: Iterable[Row],
     kpi: ParseKPI | None = None,
@@ -164,6 +181,10 @@ def cluster_cells_ast(
     clusters: defaultdict[ClusterKey, list[tuple[int, str]]] = defaultdict(list)
     constants: list[Constant] = []
     unparsed: list[Constant] = []
+    # Copied formulas share one relative (R1C1) text, and the AST-hash id
+    # depends only on it, so each distinct relative formula is parsed once
+    # (500,000 dragged cells -> a few hundred parses). Failures are memoised too.
+    memo: dict[str, str | ValueError] = {}
     for sheet, addr, content in rows:
         text = str(content).strip()
         if not text:
@@ -172,8 +193,8 @@ def cluster_cells_ast(
             constants.append((sheet, addr, text))
             continue
         try:
-            cid = cluster_id_for(text, addr)
             row, col = parse_address(addr)
+            cid = _memo_cluster_id(memo, text, addr)
         except (ParseError, ValueError) as exc:
             unparsed.append((sheet, addr, text))
             if kpi is not None:
